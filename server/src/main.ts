@@ -28,7 +28,19 @@ async function bootstrap() {
   ].filter(Boolean);
 
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+
+      const isAllowed =
+        allowedOrigins.includes(origin) ||
+        /^https:\/\/training-ops-platform-.*\.vercel\.app$/.test(origin);
+
+      if (isAllowed) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`), false);
+    },
     credentials: true,
   });
 
@@ -37,6 +49,6 @@ async function bootstrap() {
   const port = Number(process.env.PORT) || 3001;
   await app.listen(port);
 
-  console.log(`Server running on port ${port} - main.ts:40`);
+  console.log(`Server running on port ${port} - main.ts:52`);
 }
 bootstrap();
