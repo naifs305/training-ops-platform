@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+.env
+server/.env
+client/.env.local
+uploads/*
+!server/uploads/.gitkeep
+*.log
+.DS_Store
