@@ -4,7 +4,7 @@
   "scripts": {
     "build": "nest build",
     "start:server": "nest start --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "node dist/src/main",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "ts-node prisma/seed.ts"
