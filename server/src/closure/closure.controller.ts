@@ -20,8 +20,8 @@ import {
 } from './dto/form.dto';
 import { UpdateElementDto } from './dto/update-element.dto';
 import { PrismaService } from '../prisma/prisma.service';
-import * as pdf from 'html-pdf';
 import { Response } from 'express';
+import PDFDocument = require('pdfkit');
 
 @Controller('closure')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -118,242 +118,107 @@ export class ClosureController {
 
     const data = (element.formData || {}) as any;
     const info = data.generatedCourseInfo || {};
-    const attachments = Array.isArray(data.attachments) ? data.attachments : [];
 
-    const htmlTemplate = `
-      <html lang="ar" dir="rtl">
-        <head>
-          <meta charset="UTF-8" />
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              direction: rtl;
-              color: #1f2937;
-              padding: 28px;
-              font-size: 12px;
-              line-height: 1.8;
-            }
-            .page {
-              border: 1px solid #e5e7eb;
-              border-radius: 14px;
-              overflow: hidden;
-            }
-            .header {
-              background: #016564;
-              color: white;
-              padding: 22px 24px;
-            }
-            .header h1 {
-              margin: 0;
-              font-size: 24px;
-            }
-            .header p {
-              margin: 6px 0 0 0;
-              font-size: 13px;
-              opacity: 0.95;
-            }
-            .section {
-              padding: 18px 22px;
-              border-top: 1px solid #e5e7eb;
-            }
-            .section-title {
-              font-size: 16px;
-              font-weight: bold;
-              color: #016564;
-              margin-bottom: 12px;
-            }
-            .grid {
-              width: 100%;
-              border-collapse: collapse;
-            }
-            .grid td {
-              border: 1px solid #e5e7eb;
-              padding: 10px;
-              vertical-align: top;
-            }
-            .label {
-              color: #6b7280;
-              font-size: 11px;
-              margin-bottom: 4px;
-            }
-            .value {
-              font-weight: bold;
-              color: #111827;
-            }
-            .box {
-              background: #f8f9f9;
-              border: 1px solid #e5e7eb;
-              border-radius: 10px;
-              padding: 12px;
-              margin-bottom: 10px;
-            }
-            .photos {
-              display: flex;
-              flex-wrap: wrap;
-              gap: 10px;
-            }
-            .photo {
-              width: 160px;
-              border: 1px solid #e5e7eb;
-              border-radius: 10px;
-              padding: 6px;
-            }
-            .photo img {
-              width: 100%;
-              height: 110px;
-              object-fit: cover;
-              border-radius: 8px;
-              display: block;
-            }
-            .footer-note {
-              background: #fff7ed;
-              border: 1px solid #fed7aa;
-              border-radius: 10px;
-              padding: 12px;
-              color: #9a3412;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="page">
-            <div class="header">
-              <h1>تقرير الدورة التدريبية</h1>
-              <p>موجّه إلى سعادة وكيل التدريب</p>
-            </div>
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: 40,
+    });
 
-            <div class="section">
-              <div class="section-title">بيانات الدورة</div>
-              <table class="grid">
-                <tr>
-                  <td>
-                    <div class="label">اسم الدورة</div>
-                    <div class="value">${info.name || course.name || '-'}</div>
-                  </td>
-                  <td>
-                    <div class="label">كود الدورة</div>
-                    <div class="value">${info.code || course.code || '-'}</div>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <div class="label">المشروع التشغيلي</div>
-                    <div class="value">${info.project || course.operationalProject?.name || '-'}</div>
-                  </td>
-                  <td>
-                    <div class="label">المدينة</div>
-                    <div class="value">${info.city || course.city || '-'}</div>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <div class="label">مقر التنفيذ</div>
-                    <div class="value">${info.locationType || course.locationType || '-'}</div>
-                  </td>
-                  <td>
-                    <div class="label">عدد المتدربين</div>
-                    <div class="value">${info.traineesCount || course.numTrainees || '-'}</div>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <div class="label">تاريخ البداية</div>
-                    <div class="value">${info.startDate || (course.startDate ? new Date(course.startDate).toLocaleDateString('ar-SA') : '-')}</div>
-                  </td>
-                  <td>
-                    <div class="label">تاريخ النهاية</div>
-                    <div class="value">${info.endDate || (course.endDate ? new Date(course.endDate).toLocaleDateString('ar-SA') : '-')}</div>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <div class="label">المشرف / المنسق</div>
-                    <div class="value">${info.supervisor || `${course.primaryEmployee?.firstName || ''} ${course.primaryEmployee?.lastName || ''}`.trim() || '-'}</div>
-                  </td>
-                  <td>
-                    <div class="label">تاريخ التقديم</div>
-                    <div class="value">${element.executionAt ? new Date(element.executionAt).toLocaleString('ar-SA') : '-'}</div>
-                  </td>
-                </tr>
-              </table>
-            </div>
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=report-${course.id}.pdf`,
+    );
 
-            <div class="section">
-              <div class="section-title">تقييم المنسق</div>
+    doc.pipe(res);
 
-              <div class="box">
-                <div class="label">تقييم البيئة التدريبية</div>
-                <div class="value">${this.getRatingLabel(data.training_environment?.rating)}</div>
-                <div>${data.training_environment?.comment || '—'}</div>
-              </div>
+    doc.fontSize(18).text('تقرير الدورة التدريبية', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(11).text('موجّه إلى سعادة وكيل التدريب', { align: 'center' });
+    doc.moveDown(1.5);
 
-              <div class="box">
-                <div class="label">تقييم المدرب والتزامه وانضباطه</div>
-                <div class="value">${this.getRatingLabel(data.trainer_evaluation?.rating)}</div>
-                <div>${data.trainer_evaluation?.comment || '—'}</div>
-              </div>
+    const rows = [
+      ['اسم الدورة', info.name || course.name || '-'],
+      ['كود الدورة', info.code || course.code || '-'],
+      ['المشروع التشغيلي', info.project || course.operationalProject?.name || '-'],
+      ['المدينة', info.city || course.city || '-'],
+      ['مقر التنفيذ', info.locationType || course.locationType || '-'],
+      ['عدد المتدربين', String(info.traineesCount || course.numTrainees || '-')],
+      [
+        'تاريخ البداية',
+        info.startDate ||
+          (course.startDate
+            ? new Date(course.startDate).toLocaleDateString('ar-SA')
+            : '-'),
+      ],
+      [
+        'تاريخ النهاية',
+        info.endDate ||
+          (course.endDate
+            ? new Date(course.endDate).toLocaleDateString('ar-SA')
+            : '-'),
+      ],
+      [
+        'المشرف / المنسق',
+        info.supervisor ||
+          `${course.primaryEmployee?.firstName || ''} ${course.primaryEmployee?.lastName || ''}`.trim() ||
+          '-',
+      ],
+      [
+        'تاريخ التقديم',
+        element.executionAt
+          ? new Date(element.executionAt).toLocaleString('ar-SA')
+          : '-',
+      ],
+    ];
 
-              <div class="box">
-                <div class="label">تقييم المادة العلمية واكتمالها على منصة LMS</div>
-                <div class="value">${this.getRatingLabel(data.lms_content_evaluation?.rating)}</div>
-                <div>${data.lms_content_evaluation?.comment || '—'}</div>
-              </div>
+    doc.fontSize(14).text('بيانات الدورة', { underline: true });
+    doc.moveDown(0.6);
 
-              <div class="box">
-                <div class="label">تقييم المتدربين وانضباطهم والتزامهم</div>
-                <div class="value">${this.getRatingLabel(data.trainee_evaluation?.rating)}</div>
-                <div>${data.trainee_evaluation?.comment || '—'}</div>
-              </div>
-
-              <div class="box">
-                <div class="label">التقييم العام للبرنامج</div>
-                <div class="value">${this.getRatingLabel(data.program_evaluation?.rating)}</div>
-                <div>${data.program_evaluation?.comment || '—'}</div>
-              </div>
-            </div>
-
-            <div class="section">
-              <div class="section-title">ملاحظات إضافية</div>
-              <div class="box">${data.other_notes || 'لا توجد ملاحظات إضافية'}</div>
-            </div>
-
-            ${
-              attachments.length
-                ? `
-            <div class="section">
-              <div class="section-title">الصور الداعمة</div>
-              <div class="photos">
-                ${attachments
-                  .map(
-                    (file: any) => `
-                  <div class="photo">
-                    <img src="${file.content}" alt="${file.name || 'attachment'}" />
-                  </div>
-                `,
-                  )
-                  .join('')}
-              </div>
-            </div>
-            `
-                : ''
-            }
-
-            <div class="section">
-              <div class="footer-note">
-                أقرّ بأن جميع البيانات الواردة في هذا التقرير صحيحة وحقيقية وتمثل ما جرى في البرنامج التدريبي.
-              </div>
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-
-    pdf
-      .create(htmlTemplate, { format: 'A4', border: '10mm' })
-      .toBuffer((err, buffer) => {
-        if (err) return res.status(500).send(err);
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=report-${course.id}.pdf`);
-        res.send(buffer);
+    rows.forEach(([label, value]) => {
+      doc.fontSize(11).text(`${label}: ${value}`, {
+        align: 'right',
       });
+      doc.moveDown(0.35);
+    });
+
+    doc.moveDown(1);
+    doc.fontSize(14).text('تقييم المنسق', { underline: true });
+    doc.moveDown(0.6);
+
+    const sections = [
+      ['تقييم البيئة التدريبية', data.training_environment],
+      ['تقييم المدرب والتزامه وانضباطه', data.trainer_evaluation],
+      ['تقييم المادة العلمية واكتمالها على منصة LMS', data.lms_content_evaluation],
+      ['تقييم المتدربين وانضباطهم والتزامهم', data.trainee_evaluation],
+      ['التقييم العام للبرنامج', data.program_evaluation],
+    ];
+
+    sections.forEach(([title, section]: any) => {
+      doc.fontSize(12).text(title, { align: 'right' });
+      doc.moveDown(0.2);
+      doc.fontSize(11).text(`التقييم: ${this.getRatingLabel(section?.rating)}`, {
+        align: 'right',
+      });
+      doc.moveDown(0.2);
+      doc.fontSize(10).text(`الملاحظات: ${section?.comment || '—'}`, {
+        align: 'right',
+      });
+      doc.moveDown(0.8);
+    });
+
+    doc.fontSize(14).text('ملاحظات إضافية', { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(10).text(data.other_notes || 'لا توجد ملاحظات إضافية', {
+      align: 'right',
+    });
+
+    doc.moveDown(1.2);
+    doc.fontSize(10).text(
+      'أقرّ بأن جميع البيانات الواردة في هذا التقرير صحيحة وحقيقية وتمثل ما جرى في البرنامج التدريبي.',
+      { align: 'right' },
+    );
+
+    doc.end();
   }
 }
