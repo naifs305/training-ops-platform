@@ -32,6 +32,27 @@ export default function CourseDetail() {
     }
   };
 
+  const handleReportDownload = async (elementId) => {
+    try {
+      const res = await api.get(`/closure/${elementId}/export`, {
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `report-${elementId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert('تعذر تحميل التقرير');
+    }
+  };
+
   const elementOrder = {
     trainee_registration: 1,
     registration_message: 2,
@@ -121,12 +142,7 @@ export default function CourseDetail() {
     if (el.status === 'APPROVED' && el.element.key === 'report') {
       return (
         <button
-          onClick={() =>
-            window.open(
-              `${process.env.NEXT_PUBLIC_API_URL}/closure/${el.id}/export`,
-              '_blank',
-            )
-          }
+          onClick={() => handleReportDownload(el.id)}
           className="text-sm font-bold text-primary hover:text-primary-dark"
         >
           طباعة التقرير
