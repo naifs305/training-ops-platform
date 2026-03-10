@@ -16,20 +16,27 @@ async function bootstrap() {
     }),
   );
 
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3002',
+    'http://localhost:3010',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3002',
+    'http://127.0.0.1:3010',
+    process.env.FRONTEND_URL,
+    process.env.CORS_ORIGIN,
+  ].filter(Boolean);
+
   app.enableCors({
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3002',
-      'http://localhost:3010',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:3002',
-      'http://127.0.0.1:3010',
-    ],
+    origin: allowedOrigins,
     credentials: true,
   });
 
   app.setGlobalPrefix('api');
-  await app.listen(3001);
-  console.log('Server running on http://localhost:3001 - main.ts:33');
+
+  const port = Number(process.env.PORT) || 3001;
+  await app.listen(port);
+
+  console.log(`Server running on port ${port} - main.ts:40`);
 }
 bootstrap();
