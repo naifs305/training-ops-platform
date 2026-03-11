@@ -36,6 +36,43 @@ export class KpisController {
     );
   }
 
+  @Get('assignments')
+  async getAssignmentRegister(
+    @Query('periodType') periodType: KpiPeriodType,
+    @Query('year') year: string,
+    @Query('value') value?: string,
+  ) {
+    return this.kpisService.getAssignmentRegister(
+      periodType,
+      Number(year),
+      value ? Number(value) : undefined,
+    );
+  }
+
+  @Post('assignments')
+  async upsertAssignmentRegister(
+    @Body()
+    body: {
+      userId: string;
+      periodType: KpiPeriodType;
+      year: number;
+      value?: number;
+      assignedCoursesCount: number;
+      notes?: string;
+    },
+    @Req() req: any,
+  ) {
+    return this.kpisService.upsertAssignmentRegister(
+      req.user.userId,
+      body.userId,
+      body.periodType,
+      Number(body.year),
+      body.value ? Number(body.value) : undefined,
+      Number(body.assignedCoursesCount),
+      body.notes,
+    );
+  }
+
   @Get()
   async getSnapshots(
     @Query('periodType') periodType?: KpiPeriodType,

@@ -68,20 +68,22 @@ model User {
   termsAccepted        Boolean  @default(false)
   termsAcceptedAt      DateTime?
 
-  primaryCourses    Course[]                @relation("PrimaryResponsible")
-  supportingCourses CourseSupport[]         @relation("SupportingMember")
-  auditLogs         AuditLog[]
-  notifications     Notification[]
-  executedElements  CourseClosureTracking[] @relation("Executor")
-  decidedElements   CourseClosureTracking[] @relation("Decider")
+  primaryCourses       Course[]                @relation("PrimaryResponsible")
+  supportingCourses    CourseSupport[]         @relation("SupportingMember")
+  auditLogs            AuditLog[]
+  notifications        Notification[]
+  executedElements     CourseClosureTracking[] @relation("Executor")
+  decidedElements      CourseClosureTracking[] @relation("Decider")
 
-  sentMessages      Message[]               @relation("MessageSender")
-  receivedMessages  MessageRecipient[]      @relation("MessageRecipientUser")
-  readMessages      MessageRecipient[]      @relation("MessageReadBy")
+  sentMessages         Message[]               @relation("MessageSender")
+  receivedMessages     MessageRecipient[]      @relation("MessageRecipientUser")
+  readMessages         MessageRecipient[]      @relation("MessageReadBy")
 
-  kpiSnapshots      EmployeeKpiSnapshot[]   @relation("KpiSnapshotUser")
-  kpiNotes          EmployeeKpiNote[]       @relation("KpiNoteUser")
-  managerKpiNotes   EmployeeKpiNote[]       @relation("KpiNoteManager")
+  kpiSnapshots         EmployeeKpiSnapshot[]   @relation("KpiSnapshotUser")
+  kpiNotes             EmployeeKpiNote[]       @relation("KpiNoteUser")
+  managerKpiNotes      EmployeeKpiNote[]       @relation("KpiNoteManager")
+
+  courseAssignments    CourseAssignmentRegister[] @relation("AssignmentUser")
 }
 
 model Course {
@@ -103,19 +105,19 @@ model Course {
   requiresTrainerCompensation    Boolean      @default(false)
   status                         CourseStatus @default(PREPARATION)
 
-  operationalProjectId String
-  operationalProject   OperationalProject @relation(fields: [operationalProjectId], references: [id])
+  operationalProjectId           String
+  operationalProject             OperationalProject @relation(fields: [operationalProjectId], references: [id])
 
-  primaryEmployeeId String
-  primaryEmployee   User @relation("PrimaryResponsible", fields: [primaryEmployeeId], references: [id])
+  primaryEmployeeId              String
+  primaryEmployee                User @relation("PrimaryResponsible", fields: [primaryEmployeeId], references: [id])
 
-  supportingTeam  CourseSupport[]
-  closureElements CourseClosureTracking[]
-  auditLogs       AuditLog[]
-  messages        Message[]
+  supportingTeam                 CourseSupport[]
+  closureElements                CourseClosureTracking[]
+  auditLogs                      AuditLog[]
+  messages                       Message[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
 }
 
 model CourseSupport {
@@ -137,25 +139,25 @@ model ClosureElement {
 }
 
 model CourseClosureTracking {
-  id           String @id @default(uuid())
-  courseId     String
-  elementId    String
-  status       ElementStatus @default(NOT_STARTED)
+  id              String @id @default(uuid())
+  courseId        String
+  elementId       String
+  status          ElementStatus @default(NOT_STARTED)
 
-  executionAt  DateTime?
-  executedById String?
-  executor     User? @relation("Executor", fields: [executedById], references: [id])
+  executionAt     DateTime?
+  executedById    String?
+  executor        User? @relation("Executor", fields: [executedById], references: [id])
 
-  decisionAt   DateTime?
-  decidedById  String?
-  decider      User? @relation("Decider", fields: [decidedById], references: [id])
+  decisionAt      DateTime?
+  decidedById     String?
+  decider         User? @relation("Decider", fields: [decidedById], references: [id])
 
   rejectionReason String?
   notes           String?
   formData        Json?
 
-  course  Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  element ClosureElement @relation(fields: [elementId], references: [id])
+  course          Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  element         ClosureElement @relation(fields: [elementId], references: [id])
 
   @@unique([courseId, elementId])
 }
@@ -215,6 +217,26 @@ model MessageRecipient {
   @@unique([messageId, recipientId])
 }
 
+model CourseAssignmentRegister {
+  id                    String        @id @default(uuid())
+  userId                String
+  user                  User          @relation("AssignmentUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  periodType            KpiPeriodType @default(MONTHLY)
+  periodLabel           String
+  periodStart           DateTime
+  periodEnd             DateTime
+
+  assignedCoursesCount  Int           @default(0)
+  notes                 String?
+
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@unique([userId, periodType, periodLabel])
+  @@index([periodType, periodStart, periodEnd])
+}
+
 model EmployeeKpiSetting {
   id                           String   @id @default(uuid())
   name                         String   @default("Default KPI Settings")
@@ -243,58 +265,58 @@ model EmployeeKpiSetting {
 }
 
 model EmployeeKpiSnapshot {
-  id                               String           @id @default(uuid())
+  id                               String              @id @default(uuid())
   userId                           String
   periodType                       KpiPeriodType
   periodLabel                      String
   periodStart                      DateTime
   periodEnd                        DateTime
 
-  requiredElementsCount            Int              @default(0)
-  completedElementsCount           Int              @default(0)
-  closureCompletionRate            Float            @default(0)
+  requiredElementsCount            Int                 @default(0)
+  completedElementsCount           Int                 @default(0)
+  closureCompletionRate            Float               @default(0)
 
-  dueCoursesCount                  Int              @default(0)
-  closedCoursesCount               Int              @default(0)
-  dueCourseClosureRate             Float            @default(0)
+  dueCoursesCount                  Int                 @default(0)
+  closedCoursesCount               Int                 @default(0)
+  dueCourseClosureRate             Float               @default(0)
 
-  submittedElementsCount           Int              @default(0)
-  approvedElementsCount            Int              @default(0)
-  returnedElementsCount            Int              @default(0)
-  rejectedElementsCount            Int              @default(0)
+  submittedElementsCount           Int                 @default(0)
+  approvedElementsCount            Int                 @default(0)
+  returnedElementsCount            Int                 @default(0)
+  rejectedElementsCount            Int                 @default(0)
 
-  firstPassApprovalRate            Float            @default(0)
-  returnRate                       Float            @default(0)
-  rejectRate                       Float            @default(0)
-  operationalErrorRate             Float            @default(0)
+  firstPassApprovalRate            Float               @default(0)
+  returnRate                       Float               @default(0)
+  rejectRate                       Float               @default(0)
+  operationalErrorRate             Float               @default(0)
 
-  avgElementSubmissionHours        Float            @default(0)
-  avgResubmissionHours             Float            @default(0)
-  avgCourseClosureDelayDays        Float            @default(0)
+  avgElementSubmissionHours        Float               @default(0)
+  avgResubmissionHours             Float               @default(0)
+  avgCourseClosureDelayDays        Float               @default(0)
 
-  overdueCoursesCount              Int              @default(0)
-  overdueCoursesRate               Float            @default(0)
+  overdueCoursesCount              Int                 @default(0)
+  overdueCoursesRate               Float               @default(0)
 
-  overdueElementsCount             Int              @default(0)
-  overdueElementsRate              Float            @default(0)
+  overdueElementsCount             Int                 @default(0)
+  overdueElementsRate              Float               @default(0)
 
-  stalePendingElementsCount        Int              @default(0)
-  stalePendingElementsRate         Float            @default(0)
+  stalePendingElementsCount        Int                 @default(0)
+  stalePendingElementsRate         Float               @default(0)
 
-  productivityScore                Float            @default(0)
-  speedScore                       Float            @default(0)
-  qualityScore                     Float            @default(0)
-  disciplineScore                  Float            @default(0)
-  finalScore                       Float            @default(0)
-  performanceLevel                 PerformanceLevel @default(GOOD)
+  productivityScore                Float               @default(0)
+  speedScore                       Float               @default(0)
+  qualityScore                     Float               @default(0)
+  disciplineScore                  Float               @default(0)
+  finalScore                       Float               @default(0)
+  performanceLevel                 PerformanceLevel    @default(GOOD)
 
   settingsId                       String?
   settings                         EmployeeKpiSetting? @relation(fields: [settingsId], references: [id], onDelete: SetNull)
 
-  createdAt                        DateTime         @default(now())
-  updatedAt                        DateTime         @updatedAt
+  createdAt                        DateTime            @default(now())
+  updatedAt                        DateTime            @updatedAt
 
-  user                             User             @relation("KpiSnapshotUser", fields: [userId], references: [id], onDelete: Cascade)
+  user                             User                @relation("KpiSnapshotUser", fields: [userId], references: [id], onDelete: Cascade)
   notes                            EmployeeKpiNote[]
 
   @@unique([userId, periodType, periodLabel])

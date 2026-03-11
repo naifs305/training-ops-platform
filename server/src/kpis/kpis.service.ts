@@ -2,7 +2,6 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import {
   KpiPeriodType,
   PerformanceLevel,
-  Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -159,7 +158,12 @@ export class KpisService {
     };
   }
 
-  async calculateAndStore(periodType: KpiPeriodType, year: number, value: number | undefined, managerId: string) {
+  async calculateAndStore(
+    periodType: KpiPeriodType,
+    year: number,
+    value: number | undefined,
+    managerId: string,
+  ) {
     const { label, start, end } = this.getPeriodRange(periodType, year, value);
 
     const settings =
@@ -198,6 +202,16 @@ export class KpisService {
     const snapshots = [];
 
     for (const employee of employees) {
+      const assignment = await this.prisma.courseAssignmentRegister.findUnique({
+        where: {
+          userId_periodType_periodLabel: {
+            userId: employee.id,
+            periodType,
+            periodLabel: label,
+          },
+        },
+      });
+
       const courses = await this.prisma.course.findMany({
         where: {
           primaryEmployeeId: employee.id,
@@ -286,6 +300,15 @@ export class KpisService {
         const diff = lastApprovedAt.getTime() - new Date(course.endDate).getTime();
         return Math.max(0, diff / (1000 * 60 * 60 * 24));
       });
+
+      const assignedCoursesCount = assignment?.assignedCoursesCount ?? 0;
+      const actualCoursesCount = relevantCourses.length;
+      const missingCoursesCount = Math.max(assignedCoursesCount - actualCoursesCount, 0);
+      const extraCoursesCount = Math.max(actualCoursesCount - assignedCoursesCount, 0);
+      const courseRegistrationCoverageRate = this.toPercent(
+        actualCoursesCount,
+        assignedCoursesCount,
+      );
 
       const metrics = {
         requiredElementsCount: relevantElements.length,
@@ -443,6 +466,11 @@ export class KpisService {
         userId: snapshot.userId,
         employeeName: `${snapshot.user.firstName} ${snapshot.user.lastName}`,
         projectName: snapshot.user.operationalProject?.name || '-',
+        assignedCoursesCount,
+        actualCoursesCount,
+        missingCoursesCount,
+        extraCoursesCount,
+        courseRegistrationCoverageRate,
         finalScore: snapshot.finalScore,
         performanceLevel: this.levelLabel(snapshot.performanceLevel),
         closureCompletionRate: snapshot.closureCompletionRate,
@@ -476,7 +504,7 @@ export class KpisService {
   }
 
   async getSnapshots(periodType?: KpiPeriodType, periodLabel?: string) {
-    return this.prisma.employeeKpiSnapshot.findMany({
+    const snapshots = await this.prisma.employeeKpiSnapshot.findMany({
       where: {
         ...(periodType ? { periodType } : {}),
         ...(periodLabel ? { periodLabel } : {}),
@@ -497,9 +525,52 @@ export class KpisService {
       },
       orderBy: [{ finalScore: 'desc' }, { createdAt: 'desc' }],
     });
+
+    const enriched = await Promise.all(
+      snapshots.map(async (snapshot) => {
+        const assignment = await this.prisma.courseAssignmentRegister.findUnique({
+          where: {
+            userId_periodType_periodLabel: {
+              userId: snapshot.userId,
+              periodType: snapshot.periodType,
+              periodLabel: snapshot.periodLabel,
+            },
+          },
+        });
+
+        const actualCoursesCount = await this.prisma.course.count({
+          where: {
+            primaryEmployeeId: snapshot.userId,
+            startDate: { lte: snapshot.periodEnd },
+            endDate: { gte: snapshot.periodStart },
+          },
+        });
+
+        const assignedCoursesCount = assignment?.assignedCoursesCount ?? 0;
+
+        return {
+          ...snapshot,
+          assignedCoursesCount,
+          actualCoursesCount,
+          missingCoursesCount: Math.max(assignedCoursesCount - actualCoursesCount, 0),
+          extraCoursesCount: Math.max(actualCoursesCount - assignedCoursesCount, 0),
+          courseRegistrationCoverageRate: this.toPercent(
+            actualCoursesCount,
+            assignedCoursesCount,
+          ),
+          performanceLevelLabel: this.levelLabel(snapshot.performanceLevel),
+        };
+      }),
+    );
+
+    return enriched;
   }
 
-  async getEmployeeSnapshotDetails(userId: string, periodType: KpiPeriodType, periodLabel: string) {
+  async getEmployeeSnapshotDetails(
+    userId: string,
+    periodType: KpiPeriodType,
+    periodLabel: string,
+  ) {
     const snapshot = await this.prisma.employeeKpiSnapshot.findUnique({
       where: {
         userId_periodType_periodLabel: {
@@ -528,8 +599,37 @@ export class KpisService {
       throw new BadRequestException('لا توجد بيانات KPI لهذه الفترة');
     }
 
+    const assignment = await this.prisma.courseAssignmentRegister.findUnique({
+      where: {
+        userId_periodType_periodLabel: {
+          userId,
+          periodType,
+          periodLabel,
+        },
+      },
+    });
+
+    const actualCoursesCount = await this.prisma.course.count({
+      where: {
+        primaryEmployeeId: userId,
+        startDate: { lte: snapshot.periodEnd },
+        endDate: { gte: snapshot.periodStart },
+      },
+    });
+
+    const assignedCoursesCount = assignment?.assignedCoursesCount ?? 0;
+
     return {
       ...snapshot,
+      assignedCoursesCount,
+      actualCoursesCount,
+      missingCoursesCount: Math.max(assignedCoursesCount - actualCoursesCount, 0),
+      extraCoursesCount: Math.max(actualCoursesCount - assignedCoursesCount, 0),
+      courseRegistrationCoverageRate: this.toPercent(
+        actualCoursesCount,
+        assignedCoursesCount,
+      ),
+      assignmentNotes: assignment?.notes || null,
       performanceLevelLabel: this.levelLabel(snapshot.performanceLevel),
     };
   }
@@ -570,5 +670,135 @@ export class KpisService {
     );
 
     return created;
+  }
+
+  async getAssignmentRegister(periodType: KpiPeriodType, year: number, value?: number) {
+    const { label, start, end } = this.getPeriodRange(periodType, year, value);
+
+    const employees = await this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        roles: { has: 'EMPLOYEE' },
+      },
+      include: {
+        operationalProject: true,
+      },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+    });
+
+    const rows = await Promise.all(
+      employees.map(async (employee) => {
+        const register = await this.prisma.courseAssignmentRegister.findUnique({
+          where: {
+            userId_periodType_periodLabel: {
+              userId: employee.id,
+              periodType,
+              periodLabel: label,
+            },
+          },
+        });
+
+        const actualCoursesCount = await this.prisma.course.count({
+          where: {
+            primaryEmployeeId: employee.id,
+            startDate: { lte: end },
+            endDate: { gte: start },
+          },
+        });
+
+        const assignedCoursesCount = register?.assignedCoursesCount ?? 0;
+
+        return {
+          userId: employee.id,
+          employeeName: `${employee.firstName} ${employee.lastName}`,
+          projectName: employee.operationalProject?.name || '-',
+          periodType,
+          periodLabel: label,
+          periodStart: start,
+          periodEnd: end,
+          assignedCoursesCount,
+          actualCoursesCount,
+          notes: register?.notes || '',
+          updatedAt: register?.updatedAt || null,
+          missingCoursesCount: Math.max(assignedCoursesCount - actualCoursesCount, 0),
+          extraCoursesCount: Math.max(actualCoursesCount - assignedCoursesCount, 0),
+          courseRegistrationCoverageRate: this.toPercent(
+            actualCoursesCount,
+            assignedCoursesCount,
+          ),
+        };
+      }),
+    );
+
+    return {
+      periodType,
+      periodLabel: label,
+      periodStart: start,
+      periodEnd: end,
+      rows,
+    };
+  }
+
+  async upsertAssignmentRegister(
+    managerId: string,
+    userId: string,
+    periodType: KpiPeriodType,
+    year: number,
+    value: number | undefined,
+    assignedCoursesCount: number,
+    notes?: string,
+  ) {
+    if (assignedCoursesCount < 0) {
+      throw new BadRequestException('عدد الدورات المسندة غير صحيح');
+    }
+
+    const employee = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!employee) {
+      throw new BadRequestException('المستخدم غير موجود');
+    }
+
+    const { label, start, end } = this.getPeriodRange(periodType, year, value);
+
+    const saved = await this.prisma.courseAssignmentRegister.upsert({
+      where: {
+        userId_periodType_periodLabel: {
+          userId,
+          periodType,
+          periodLabel: label,
+        },
+      },
+      update: {
+        assignedCoursesCount,
+        notes: notes?.trim() || null,
+        periodStart: start,
+        periodEnd: end,
+      },
+      create: {
+        userId,
+        periodType,
+        periodLabel: label,
+        periodStart: start,
+        periodEnd: end,
+        assignedCoursesCount,
+        notes: notes?.trim() || null,
+      },
+    });
+
+    await this.audit.log(
+      managerId,
+      'MANAGER',
+      'ASSIGNMENT_REGISTER_UPDATED',
+      {
+        userId,
+        periodType,
+        periodLabel: label,
+        assignedCoursesCount,
+      },
+    );
+
+    return saved;
   }
 }
