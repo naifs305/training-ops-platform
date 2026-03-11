@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
+import DatePicker from 'react-datepicker';
 import MainLayout from '../../components/layout/MainLayout';
 import useAuth from '../../context/AuthContext';
 import api from '../../lib/axios';
@@ -7,6 +8,7 @@ import toast from 'react-hot-toast';
 
 const initialForm = {
   title: '',
+  operationalProjectId: '',
   locationType: '',
   city: '',
   startDate: '',
@@ -25,15 +27,34 @@ const locationTypeOptions = [
   { value: 'REMOTE', label: 'عن بُعد' },
 ];
 
+function formatDateForApi(date) {
+  if (!date) return '';
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateForDisplay(date) {
+  if (!date) return '';
+  return new Intl.DateTimeFormat('ar-SA', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(date);
+}
+
 export default function CreateCoursePage() {
   const router = useRouter();
   const { user, loading } = useAuth();
 
   const [form, setForm] = useState(initialForm);
   const [projects, setProjects] = useState([]);
-  const [selectedOperationalProjectId, setSelectedOperationalProjectId] = useState('');
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const startDateObj = form.startDate ? new Date(form.startDate) : null;
+  const endDateObj = form.endDate ? new Date(form.endDate) : null;
 
   useEffect(() => {
     const loadProjects = async () => {
@@ -50,10 +71,13 @@ export default function CreateCoursePage() {
         setProjects(items);
 
         if (items.length > 0) {
-          setSelectedOperationalProjectId(items[0].id);
+          setForm((prev) => ({
+            ...prev,
+            operationalProjectId: prev.operationalProjectId || items[0].id,
+          }));
         }
       } catch (error) {
-        console.error('Failed to load projects: - create.js:56', error);
+        console.error('Failed to load projects: - create.js:80', error);
         toast.error('تعذر تحميل المشاريع التشغيلية');
       } finally {
         setIsLoadingProjects(false);
@@ -66,16 +90,16 @@ export default function CreateCoursePage() {
   const canSubmit = useMemo(() => {
     return (
       form.title.trim() &&
+      form.operationalProjectId &&
       form.locationType &&
       form.city.trim() &&
       form.startDate &&
       form.endDate &&
       form.traineesCount &&
       Number(form.traineesCount) > 0 &&
-      selectedOperationalProjectId &&
       user?.id
     );
-  }, [form, selectedOperationalProjectId, user]);
+  }, [form, user]);
 
   const handleChange = (key, value) => {
     setForm((prev) => ({
@@ -84,23 +108,27 @@ export default function CreateCoursePage() {
     }));
   };
 
+  const handleDateRangeChange = (dates) => {
+    const [start, end] = dates;
+    setForm((prev) => ({
+      ...prev,
+      startDate: start ? formatDateForApi(start) : '',
+      endDate: end ? formatDateForApi(end) : '',
+    }));
+  };
+
   const normalizePayload = () => {
     return {
-      // السيرفر الحالي ما زال يتوقع هذه الأسماء
       name: form.title.trim(),
       city: form.city.trim(),
       locationType: form.locationType,
       startDate: form.startDate,
       endDate: form.endDate,
       numTrainees: Number(form.traineesCount),
-
-      operationalProjectId: selectedOperationalProjectId,
+      operationalProjectId: form.operationalProjectId,
       primaryEmployeeId: user?.id,
       supportingEmployeeIds: [],
-
-      // لأن السيرفر الحالي ما زال يشترط courseType
       courseType: form.locationType,
-
       requiresAdvance: form.requiresAdvance,
       requiresRevenue: false,
       materialsIssued: form.requiresMaterialReturn,
@@ -142,7 +170,7 @@ export default function CreateCoursePage() {
 
       router.push('/courses');
     } catch (error) {
-      console.error('Create course failed: - create.js:145', error);
+      console.error('Create course failed: - create.js:173', error);
       toast.error(error?.response?.data?.message || 'تعذر إنشاء الدورة');
     } finally {
       setIsSubmitting(false);
@@ -166,7 +194,6 @@ export default function CreateCoursePage() {
           <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h1 className="text-2xl font-bold text-slate-900">إنشاء دورة جديدة</h1>
             <p className="mt-1 text-sm text-slate-500">
-              نموذج مبسط وسهل التعبئة
             </p>
           </div>
 
@@ -182,8 +209,20 @@ export default function CreateCoursePage() {
                   required
                   value={form.title}
                   onChange={(value) => handleChange('title', value)}
-                  placeholder="مثال: أساسيات الإشراف على البرامج التدريبية"
+                  placeholder="مثال: التفتيش الأمني "
                   className="md:col-span-2"
+                />
+
+                <SelectField
+                  label="المشروع التشغيلي"
+                  required
+                  value={form.operationalProjectId}
+                  onChange={(value) => handleChange('operationalProjectId', value)}
+                  disabled={isLoadingProjects}
+                  options={projects.map((project) => ({
+                    value: project.id,
+                    label: project.name,
+                  }))}
                 />
 
                 <SelectField
@@ -203,10 +242,9 @@ export default function CreateCoursePage() {
                 />
 
                 <DateRangeField
-                  startDate={form.startDate}
-                  endDate={form.endDate}
-                  onStartDateChange={(value) => handleChange('startDate', value)}
-                  onEndDateChange={(value) => handleChange('endDate', value)}
+                  startDate={startDateObj}
+                  endDate={endDateObj}
+                  onChange={handleDateRangeChange}
                 />
 
                 <Field
@@ -217,20 +255,15 @@ export default function CreateCoursePage() {
                   value={form.traineesCount}
                   onChange={(value) => handleChange('traineesCount', value)}
                   placeholder="مثال: 25"
-                  className="md:col-span-2"
                 />
               </div>
-
-              {isLoadingProjects ? (
-                <p className="mt-4 text-sm text-slate-500">جاري تجهيز المشروع التشغيلي تلقائيًا...</p>
-              ) : null}
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="mb-5">
                 <h2 className="text-lg font-bold text-slate-900">الإعدادات التشغيلية</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  هذه الخيارات ستتحكم لاحقًا في ظهور العناصر التشغيلية المشروطة داخل الدورة
+                  هذه الخيارات تتحكم في العناصر التشغيلية المشروطة داخل الدورة
                 </p>
               </div>
 
@@ -281,6 +314,7 @@ export default function CreateCoursePage() {
                   <div className="text-sm text-slate-500">
                     المطلوب فقط:
                     <span className="mx-1 font-semibold text-slate-800">العنوان</span> /
+                    <span className="mx-1 font-semibold text-slate-800">المشروع</span> /
                     <span className="mx-1 font-semibold text-slate-800">مقر التنفيذ</span> /
                     <span className="mx-1 font-semibold text-slate-800">المدينة</span> /
                     <span className="mx-1 font-semibold text-slate-800">التاريخ</span> /
@@ -349,6 +383,7 @@ function SelectField({
   onChange,
   options,
   required,
+  disabled = false,
 }) {
   return (
     <label className="block">
@@ -360,9 +395,13 @@ function SelectField({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+        disabled={disabled}
+        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-100"
       >
-        <option value="">اختر مقر التنفيذ</option>
+        <option value="">
+          {label === 'المشروع التشغيلي' ? 'اختر المشروع التشغيلي' : 'اختر مقر التنفيذ'}
+        </option>
+
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -373,41 +412,44 @@ function SelectField({
   );
 }
 
-function DateRangeField({
-  startDate,
-  endDate,
-  onStartDateChange,
-  onEndDateChange,
-}) {
+function DateRangeField({ startDate, endDate, onChange }) {
   return (
     <div className="md:col-span-2">
       <span className="mb-2 flex items-center gap-1 text-sm font-medium text-slate-700">
-        التاريخ
+        تاريخ الدورة
         <span className="text-red-500">*</span>
       </span>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <label className="block">
-          <span className="mb-2 block text-xs font-medium text-slate-500">من</span>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => onStartDateChange(e.target.value)}
-            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-          />
-        </label>
-
-        <label className="block">
-          <span className="mb-2 block text-xs font-medium text-slate-500">إلى</span>
-          <input
-            type="date"
-            value={endDate}
-            min={startDate || undefined}
-            onChange={(e) => onEndDateChange(e.target.value)}
-            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-          />
-        </label>
-      </div>
+      <DatePicker
+        selected={startDate}
+        onChange={onChange}
+        startDate={startDate}
+        endDate={endDate}
+        selectsRange
+        monthsShown={2}
+        minDate={new Date()}
+        dateFormat="yyyy-MM-dd"
+        placeholderText="اختر تاريخ البداية والنهاية"
+        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+        calendarClassName="rounded-xl border border-slate-200 shadow-xl"
+        wrapperClassName="w-full"
+        isClearable
+        customInput={
+          <button
+            type="button"
+            className="flex w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+          >
+            <span>
+              {startDate && endDate
+                ? `${formatDateForDisplay(startDate)} ← ${formatDateForDisplay(endDate)}`
+                : startDate
+                ? `${formatDateForDisplay(startDate)} ← اختر تاريخ النهاية`
+                : 'اختر تاريخ البداية والنهاية'}
+            </span>
+            <span className="text-slate-400">📅</span>
+          </button>
+        }
+      />
     </div>
   );
 }
