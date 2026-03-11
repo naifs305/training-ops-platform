@@ -1,8 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import {
-  KpiPeriodType,
-  PerformanceLevel,
-} from '@prisma/client';
+import { KpiPeriodType, PerformanceLevel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -93,60 +90,58 @@ export class KpisService {
   }
 
   private calculateWeightedScores(metrics: {
+    assignmentCoverageRate: number;
+    missingCoursesRate: number;
     closureCompletionRate: number;
-    dueCourseClosureRate: number;
-    avgElementSubmissionHours: number;
-    avgResubmissionHours: number;
-    avgCourseClosureDelayDays: number;
-    firstPassApprovalRate: number;
+    submissionRate: number;
+    firstPassSubmissionRate: number;
     returnRate: number;
     rejectRate: number;
     operationalErrorRate: number;
-    overdueCoursesRate: number;
+    avgElementSubmissionHours: number;
+    avgResubmissionHours: number;
     overdueElementsRate: number;
     stalePendingElementsRate: number;
-  }, settings: {
-    closureCompletionWeight: number;
-    overdueClosuresWeight: number;
-    avgElementSubmissionWeight: number;
-    avgResubmissionWeight: number;
-    avgCourseClosureWeight: number;
-    firstPassApprovalWeight: number;
-    returnRateWeight: number;
-    rejectRateWeight: number;
-    errorRateWeight: number;
-    overdueCoursesWeight: number;
-    overdueElementsWeight: number;
-    staleElementsWeight: number;
   }) {
+    const coverageScore = Math.max(
+      0,
+      metrics.assignmentCoverageRate - metrics.missingCoursesRate * 0.5,
+    );
+
+    const completionScore =
+      metrics.closureCompletionRate * 0.55 +
+      metrics.submissionRate * 0.45;
+
     const productivityScore =
-      (metrics.closureCompletionRate * settings.closureCompletionWeight +
-        metrics.dueCourseClosureRate * settings.overdueClosuresWeight) / 30;
+      coverageScore * 0.45 +
+      completionScore * 0.55;
+
+    const firstPassScore = metrics.firstPassSubmissionRate;
+    const returnPenaltyScore = 100 - metrics.returnRate;
+    const rejectPenaltyScore = 100 - metrics.rejectRate;
+    const errorPenaltyScore = 100 - metrics.operationalErrorRate;
+
+    const qualityScore =
+      firstPassScore * 0.4 +
+      returnPenaltyScore * 0.2 +
+      rejectPenaltyScore * 0.15 +
+      errorPenaltyScore * 0.25;
 
     const elementSubmissionScore = Math.max(0, 100 - metrics.avgElementSubmissionHours * 2);
     const resubmissionScore = Math.max(0, 100 - metrics.avgResubmissionHours * 2);
-    const courseClosureDelayScore = Math.max(0, 100 - metrics.avgCourseClosureDelayDays * 10);
 
     const speedScore =
-      (elementSubmissionScore * settings.avgElementSubmissionWeight +
-        resubmissionScore * settings.avgResubmissionWeight +
-        courseClosureDelayScore * settings.avgCourseClosureWeight) / 20;
-
-    const qualityScore =
-      (metrics.firstPassApprovalRate * settings.firstPassApprovalWeight +
-        (100 - metrics.returnRate) * settings.returnRateWeight +
-        (100 - metrics.rejectRate) * settings.rejectRateWeight +
-        (100 - metrics.operationalErrorRate) * settings.errorRateWeight) / 35;
+      elementSubmissionScore * 0.7 +
+      resubmissionScore * 0.3;
 
     const disciplineScore =
-      ((100 - metrics.overdueCoursesRate) * settings.overdueCoursesWeight +
-        (100 - metrics.overdueElementsRate) * settings.overdueElementsWeight +
-        (100 - metrics.stalePendingElementsRate) * settings.staleElementsWeight) / 15;
+      (100 - metrics.overdueElementsRate) * 0.6 +
+      (100 - metrics.stalePendingElementsRate) * 0.4;
 
     const finalScore =
-      productivityScore * 0.30 +
+      productivityScore * 0.35 +
+      qualityScore * 0.30 +
       speedScore * 0.20 +
-      qualityScore * 0.35 +
       disciplineScore * 0.15;
 
     return {
@@ -165,28 +160,6 @@ export class KpisService {
     managerId: string,
   ) {
     const { label, start, end } = this.getPeriodRange(periodType, year, value);
-
-    const settings =
-      await this.prisma.employeeKpiSetting.findFirst({
-        where: { isActive: true },
-        orderBy: { createdAt: 'desc' },
-      });
-
-    const effectiveSettings = settings || {
-      id: null,
-      closureCompletionWeight: 15,
-      overdueClosuresWeight: 15,
-      avgElementSubmissionWeight: 5,
-      avgResubmissionWeight: 5,
-      avgCourseClosureWeight: 10,
-      firstPassApprovalWeight: 15,
-      returnRateWeight: 10,
-      rejectRateWeight: 5,
-      errorRateWeight: 5,
-      overdueCoursesWeight: 5,
-      overdueElementsWeight: 5,
-      staleElementsWeight: 5,
-    };
 
     const employees = await this.prisma.user.findMany({
       where: {
@@ -235,19 +208,14 @@ export class KpisService {
         course.closureElements.filter((el) => el.status !== 'NOT_APPLICABLE'),
       );
 
-      const completedElements = relevantElements.filter(
-        (el) => el.status === 'PENDING_APPROVAL' || el.status === 'APPROVED',
-      );
-
-      const dueCourses = relevantCourses.filter((course) => new Date(course.endDate) <= end);
-      const closedCourses = dueCourses.filter((course) => course.status === 'CLOSED');
-
       const submittedElements = relevantElements.filter((el) => !!el.executionAt);
       const approvedElements = relevantElements.filter((el) => el.status === 'APPROVED');
       const returnedElements = relevantElements.filter((el) => el.status === 'RETURNED');
       const rejectedElements = relevantElements.filter((el) => el.status === 'REJECTED');
-
-      const overdueCourses = dueCourses.filter((course) => course.status !== 'CLOSED');
+      const pendingApprovalElements = relevantElements.filter(
+        (el) => el.status === 'PENDING_APPROVAL',
+      );
+      const completedElements = [...approvedElements, ...pendingApprovalElements];
 
       const now = new Date();
 
@@ -260,6 +228,7 @@ export class KpisService {
 
       const stalePendingElements = relevantElements.filter((el) => {
         if (el.status !== 'NOT_STARTED' && el.status !== 'RETURNED') return false;
+
         const baseDate =
           el.status === 'RETURNED' && el.decisionAt
             ? new Date(el.decisionAt)
@@ -271,61 +240,44 @@ export class KpisService {
         return diffHours > 72;
       });
 
-      const approvedWithoutReturnOrReject = approvedElements.filter(
-        (el) => !el.rejectionReason,
+      const submittedWithoutReturnOrReject = submittedElements.filter(
+        (el) => el.status !== 'RETURNED' && el.status !== 'REJECTED',
       );
 
       const elementSubmissionHours = submittedElements.map((el) => {
         const course = relevantCourses.find((c) => c.id === el.courseId);
         if (!course || !el.executionAt) return 0;
         const diff = new Date(el.executionAt).getTime() - new Date(course.createdAt).getTime();
-        return diff / (1000 * 60 * 60);
+        return Math.max(0, diff / (1000 * 60 * 60));
       });
 
       const resubmissionHours = submittedElements
         .filter((el) => el.decisionAt && el.executionAt && el.status !== 'APPROVED')
         .map((el) => {
           const diff = new Date(el.executionAt!).getTime() - new Date(el.decisionAt!).getTime();
-          return diff / (1000 * 60 * 60);
+          return Math.max(0, diff / (1000 * 60 * 60));
         });
-
-      const courseClosureDelayDays = closedCourses.map((course) => {
-        const approvedDates = course.closureElements
-          .filter((el) => el.status === 'APPROVED' && el.decisionAt)
-          .map((el) => new Date(el.decisionAt as Date).getTime());
-
-        if (!approvedDates.length) return 0;
-
-        const lastApprovedAt = new Date(Math.max(...approvedDates));
-        const diff = lastApprovedAt.getTime() - new Date(course.endDate).getTime();
-        return Math.max(0, diff / (1000 * 60 * 60 * 24));
-      });
 
       const assignedCoursesCount = assignment?.assignedCoursesCount ?? 0;
       const actualCoursesCount = relevantCourses.length;
       const missingCoursesCount = Math.max(assignedCoursesCount - actualCoursesCount, 0);
       const extraCoursesCount = Math.max(actualCoursesCount - assignedCoursesCount, 0);
-      const courseRegistrationCoverageRate = this.toPercent(
-        actualCoursesCount,
-        assignedCoursesCount,
-      );
+      const assignmentCoverageRate = this.toPercent(actualCoursesCount, assignedCoursesCount);
+      const missingCoursesRate = this.toPercent(missingCoursesCount, assignedCoursesCount);
 
       const metrics = {
         requiredElementsCount: relevantElements.length,
         completedElementsCount: completedElements.length,
         closureCompletionRate: this.toPercent(completedElements.length, relevantElements.length),
 
-        dueCoursesCount: dueCourses.length,
-        closedCoursesCount: closedCourses.length,
-        dueCourseClosureRate: this.toPercent(closedCourses.length, dueCourses.length),
-
         submittedElementsCount: submittedElements.length,
         approvedElementsCount: approvedElements.length,
         returnedElementsCount: returnedElements.length,
         rejectedElementsCount: rejectedElements.length,
 
-        firstPassApprovalRate: this.toPercent(
-          approvedWithoutReturnOrReject.length,
+        submissionRate: this.toPercent(submittedElements.length, relevantElements.length),
+        firstPassSubmissionRate: this.toPercent(
+          submittedWithoutReturnOrReject.length,
           submittedElements.length,
         ),
         returnRate: this.toPercent(returnedElements.length, submittedElements.length),
@@ -337,10 +289,6 @@ export class KpisService {
 
         avgElementSubmissionHours: this.toAverage(elementSubmissionHours),
         avgResubmissionHours: this.toAverage(resubmissionHours),
-        avgCourseClosureDelayDays: this.toAverage(courseClosureDelayDays),
-
-        overdueCoursesCount: overdueCourses.length,
-        overdueCoursesRate: this.toPercent(overdueCourses.length, dueCourses.length),
 
         overdueElementsCount: overdueElements.length,
         overdueElementsRate: this.toPercent(overdueElements.length, relevantElements.length),
@@ -350,9 +298,26 @@ export class KpisService {
           stalePendingElements.length,
           relevantElements.length,
         ),
+
+        assignmentCoverageRate,
+        missingCoursesRate,
       };
 
-      const scores = this.calculateWeightedScores(metrics, effectiveSettings);
+      const scores = this.calculateWeightedScores({
+        assignmentCoverageRate: metrics.assignmentCoverageRate,
+        missingCoursesRate: metrics.missingCoursesRate,
+        closureCompletionRate: metrics.closureCompletionRate,
+        submissionRate: metrics.submissionRate,
+        firstPassSubmissionRate: metrics.firstPassSubmissionRate,
+        returnRate: metrics.returnRate,
+        rejectRate: metrics.rejectRate,
+        operationalErrorRate: metrics.operationalErrorRate,
+        avgElementSubmissionHours: metrics.avgElementSubmissionHours,
+        avgResubmissionHours: metrics.avgResubmissionHours,
+        overdueElementsRate: metrics.overdueElementsRate,
+        stalePendingElementsRate: metrics.stalePendingElementsRate,
+      });
+
       const performanceLevel = this.getPerformanceLevel(scores.finalScore);
 
       const snapshot = await this.prisma.employeeKpiSnapshot.upsert({
@@ -371,26 +336,26 @@ export class KpisService {
           completedElementsCount: metrics.completedElementsCount,
           closureCompletionRate: metrics.closureCompletionRate,
 
-          dueCoursesCount: metrics.dueCoursesCount,
-          closedCoursesCount: metrics.closedCoursesCount,
-          dueCourseClosureRate: metrics.dueCourseClosureRate,
+          dueCoursesCount: assignedCoursesCount,
+          closedCoursesCount: actualCoursesCount,
+          dueCourseClosureRate: metrics.assignmentCoverageRate,
 
           submittedElementsCount: metrics.submittedElementsCount,
           approvedElementsCount: metrics.approvedElementsCount,
           returnedElementsCount: metrics.returnedElementsCount,
           rejectedElementsCount: metrics.rejectedElementsCount,
 
-          firstPassApprovalRate: metrics.firstPassApprovalRate,
+          firstPassApprovalRate: metrics.firstPassSubmissionRate,
           returnRate: metrics.returnRate,
           rejectRate: metrics.rejectRate,
           operationalErrorRate: metrics.operationalErrorRate,
 
           avgElementSubmissionHours: metrics.avgElementSubmissionHours,
           avgResubmissionHours: metrics.avgResubmissionHours,
-          avgCourseClosureDelayDays: metrics.avgCourseClosureDelayDays,
+          avgCourseClosureDelayDays: 0,
 
-          overdueCoursesCount: metrics.overdueCoursesCount,
-          overdueCoursesRate: metrics.overdueCoursesRate,
+          overdueCoursesCount: missingCoursesCount,
+          overdueCoursesRate: metrics.missingCoursesRate,
 
           overdueElementsCount: metrics.overdueElementsCount,
           overdueElementsRate: metrics.overdueElementsRate,
@@ -404,7 +369,7 @@ export class KpisService {
           disciplineScore: scores.disciplineScore,
           finalScore: scores.finalScore,
           performanceLevel,
-          settingsId: settings?.id || null,
+          settingsId: null,
         },
         create: {
           userId: employee.id,
@@ -417,26 +382,26 @@ export class KpisService {
           completedElementsCount: metrics.completedElementsCount,
           closureCompletionRate: metrics.closureCompletionRate,
 
-          dueCoursesCount: metrics.dueCoursesCount,
-          closedCoursesCount: metrics.closedCoursesCount,
-          dueCourseClosureRate: metrics.dueCourseClosureRate,
+          dueCoursesCount: assignedCoursesCount,
+          closedCoursesCount: actualCoursesCount,
+          dueCourseClosureRate: metrics.assignmentCoverageRate,
 
           submittedElementsCount: metrics.submittedElementsCount,
           approvedElementsCount: metrics.approvedElementsCount,
           returnedElementsCount: metrics.returnedElementsCount,
           rejectedElementsCount: metrics.rejectedElementsCount,
 
-          firstPassApprovalRate: metrics.firstPassApprovalRate,
+          firstPassApprovalRate: metrics.firstPassSubmissionRate,
           returnRate: metrics.returnRate,
           rejectRate: metrics.rejectRate,
           operationalErrorRate: metrics.operationalErrorRate,
 
           avgElementSubmissionHours: metrics.avgElementSubmissionHours,
           avgResubmissionHours: metrics.avgResubmissionHours,
-          avgCourseClosureDelayDays: metrics.avgCourseClosureDelayDays,
+          avgCourseClosureDelayDays: 0,
 
-          overdueCoursesCount: metrics.overdueCoursesCount,
-          overdueCoursesRate: metrics.overdueCoursesRate,
+          overdueCoursesCount: missingCoursesCount,
+          overdueCoursesRate: metrics.missingCoursesRate,
 
           overdueElementsCount: metrics.overdueElementsCount,
           overdueElementsRate: metrics.overdueElementsRate,
@@ -450,7 +415,7 @@ export class KpisService {
           disciplineScore: scores.disciplineScore,
           finalScore: scores.finalScore,
           performanceLevel,
-          settingsId: settings?.id || null,
+          settingsId: null,
         },
         include: {
           user: {
@@ -470,11 +435,11 @@ export class KpisService {
         actualCoursesCount,
         missingCoursesCount,
         extraCoursesCount,
-        courseRegistrationCoverageRate,
+        courseRegistrationCoverageRate: assignmentCoverageRate,
         finalScore: snapshot.finalScore,
         performanceLevel: this.levelLabel(snapshot.performanceLevel),
         closureCompletionRate: snapshot.closureCompletionRate,
-        dueCourseClosureRate: snapshot.dueCourseClosureRate,
+        submissionRate: metrics.submissionRate,
         firstPassApprovalRate: snapshot.firstPassApprovalRate,
         returnRate: snapshot.returnRate,
         rejectRate: snapshot.rejectRate,
