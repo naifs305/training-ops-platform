@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import DatePicker from 'react-datepicker';
 import MainLayout from '../../components/layout/MainLayout';
@@ -44,6 +44,23 @@ function formatDateForDisplay(date) {
   }).format(date);
 }
 
+const DateRangeInput = forwardRef(function DateRangeInput(
+  { value, onClick },
+  ref,
+) {
+  return (
+    <button
+      type="button"
+      ref={ref}
+      onClick={onClick}
+      className="flex w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 transition hover:border-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
+    >
+      <span className="truncate text-right">{value || 'اختر تاريخ البداية والنهاية'}</span>
+      <span className="mr-3 text-base text-slate-400">📅</span>
+    </button>
+  );
+});
+
 export default function CreateCoursePage() {
   const router = useRouter();
   const { user, loading } = useAuth();
@@ -77,7 +94,7 @@ export default function CreateCoursePage() {
           }));
         }
       } catch (error) {
-        console.error('Failed to load projects: - create.js:80', error);
+        console.error('Failed to load projects: - create.js:97', error);
         toast.error('تعذر تحميل المشاريع التشغيلية');
       } finally {
         setIsLoadingProjects(false);
@@ -170,7 +187,7 @@ export default function CreateCoursePage() {
 
       router.push('/courses');
     } catch (error) {
-      console.error('Create course failed: - create.js:173', error);
+      console.error('Create course failed: - create.js:190', error);
       toast.error(error?.response?.data?.message || 'تعذر إنشاء الدورة');
     } finally {
       setIsSubmitting(false);
@@ -193,8 +210,6 @@ export default function CreateCoursePage() {
         <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h1 className="text-2xl font-bold text-slate-900">إنشاء دورة جديدة</h1>
-            <p className="mt-1 text-sm text-slate-500">
-            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -209,20 +224,8 @@ export default function CreateCoursePage() {
                   required
                   value={form.title}
                   onChange={(value) => handleChange('title', value)}
-                  placeholder="مثال: التفتيش الأمني "
+                  placeholder="مثال: التفتيش الأمني"
                   className="md:col-span-2"
-                />
-
-                <SelectField
-                  label="المشروع التشغيلي"
-                  required
-                  value={form.operationalProjectId}
-                  onChange={(value) => handleChange('operationalProjectId', value)}
-                  disabled={isLoadingProjects}
-                  options={projects.map((project) => ({
-                    value: project.id,
-                    label: project.name,
-                  }))}
                 />
 
                 <SelectField
@@ -255,6 +258,18 @@ export default function CreateCoursePage() {
                   value={form.traineesCount}
                   onChange={(value) => handleChange('traineesCount', value)}
                   placeholder="مثال: 25"
+                />
+
+                <SelectField
+                  label="المشروع التشغيلي"
+                  required
+                  value={form.operationalProjectId}
+                  onChange={(value) => handleChange('operationalProjectId', value)}
+                  disabled={isLoadingProjects}
+                  options={projects.map((project) => ({
+                    value: project.id,
+                    label: project.name,
+                  }))}
                 />
               </div>
             </div>
@@ -310,34 +325,22 @@ export default function CreateCoursePage() {
 
             <div className="sticky bottom-4 z-10">
               <div className="rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-lg backdrop-blur">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className="text-sm text-slate-500">
-                    المطلوب فقط:
-                    <span className="mx-1 font-semibold text-slate-800">العنوان</span> /
-                    <span className="mx-1 font-semibold text-slate-800">المشروع</span> /
-                    <span className="mx-1 font-semibold text-slate-800">مقر التنفيذ</span> /
-                    <span className="mx-1 font-semibold text-slate-800">المدينة</span> /
-                    <span className="mx-1 font-semibold text-slate-800">التاريخ</span> /
-                    <span className="mx-1 font-semibold text-slate-800">عدد المتدربين</span>
-                  </div>
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => router.push('/courses')}
+                    className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  >
+                    إلغاء
+                  </button>
 
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => router.push('/courses')}
-                      className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                    >
-                      إلغاء
-                    </button>
-
-                    <button
-                      type="submit"
-                      disabled={!canSubmit || isSubmitting}
-                      className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isSubmitting ? 'جاري الإنشاء...' : 'إنشاء الدورة'}
-                    </button>
-                  </div>
+                  <button
+                    type="submit"
+                    disabled={!canSubmit || isSubmitting}
+                    className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSubmitting ? 'جاري الإنشاء...' : 'إنشاء الدورة'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -413,6 +416,13 @@ function SelectField({
 }
 
 function DateRangeField({ startDate, endDate, onChange }) {
+  const displayValue =
+    startDate && endDate
+      ? `${formatDateForDisplay(startDate)} - ${formatDateForDisplay(endDate)}`
+      : startDate
+      ? `${formatDateForDisplay(startDate)} - اختر تاريخ النهاية`
+      : '';
+
   return (
     <div className="md:col-span-2">
       <span className="mb-2 flex items-center gap-1 text-sm font-medium text-slate-700">
@@ -427,28 +437,13 @@ function DateRangeField({ startDate, endDate, onChange }) {
         endDate={endDate}
         selectsRange
         monthsShown={2}
-        minDate={new Date()}
+        shouldCloseOnSelect={false}
         dateFormat="yyyy-MM-dd"
         placeholderText="اختر تاريخ البداية والنهاية"
-        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-        calendarClassName="rounded-xl border border-slate-200 shadow-xl"
+        calendarClassName="border border-slate-200 shadow-xl"
         wrapperClassName="w-full"
-        isClearable
-        customInput={
-          <button
-            type="button"
-            className="flex w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-          >
-            <span>
-              {startDate && endDate
-                ? `${formatDateForDisplay(startDate)} ← ${formatDateForDisplay(endDate)}`
-                : startDate
-                ? `${formatDateForDisplay(startDate)} ← اختر تاريخ النهاية`
-                : 'اختر تاريخ البداية والنهاية'}
-            </span>
-            <span className="text-slate-400">📅</span>
-          </button>
-        }
+        customInput={<DateRangeInput value={displayValue} />}
+        withPortal
       />
     </div>
   );
