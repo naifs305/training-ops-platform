@@ -27,11 +27,11 @@ function formatLevel(level) {
   return map[level] || level || '-';
 }
 
-function formatNumber(value) {
-  if (value === null || value === undefined) return '-';
+function formatNumber(value, digits = 2) {
+  if (value === null || value === undefined || value === '') return '-';
   const num = Number(value);
   if (Number.isNaN(num)) return value;
-  return num.toFixed(2);
+  return num.toFixed(digits);
 }
 
 function Badge({ children, tone = 'default' }) {
@@ -63,14 +63,33 @@ function SummaryCard({ title, value, subtext }) {
   );
 }
 
+function toneByCoverage(rate) {
+  if (rate >= 100) return 'green';
+  if (rate >= 80) return 'amber';
+  return 'red';
+}
+
+function toneByLevel(level) {
+  if (level === 'OUTSTANDING') return 'green';
+  if (level === 'VERY_GOOD') return 'blue';
+  if (level === 'GOOD') return 'gray';
+  if (level === 'NEEDS_IMPROVEMENT') return 'amber';
+  return 'red';
+}
+
 export default function KpisPage() {
   const currentYear = new Date().getFullYear();
   const [periodType, setPeriodType] = useState('MONTHLY');
   const [year, setYear] = useState(currentYear);
   const [value, setValue] = useState(new Date().getMonth() + 1);
-  const [loading, setLoading] = useState(false);
-  const [loadingTable, setLoadingTable] = useState(false);
+
+  const [loadingCalculation, setLoadingCalculation] = useState(false);
+  const [loadingSnapshots, setLoadingSnapshots] = useState(false);
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
+  const [savingAssignments, setSavingAssignments] = useState({});
+
   const [snapshots, setSnapshots] = useState([]);
+  const [assignmentRows, setAssignmentRows] = useState([]);
   const [selectedSnapshot, setSelectedSnapshot] = useState(null);
   const [note, setNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
@@ -89,8 +108,11 @@ export default function KpisPage() {
     return Array.from({ length: 5 }, (_, i) => currentYear - i);
   }, [currentYear]);
 
+  const inputClass =
+    'border border-border rounded-2xl px-3 py-2.5 text-sm bg-white text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10';
+
   const fetchSnapshots = async () => {
-    setLoadingTable(true);
+    setLoadingSnapshots(true);
     try {
       const res = await api.get('/kpis', {
         params: {
@@ -102,17 +124,48 @@ export default function KpisPage() {
     } catch (err) {
       toast.error('تعذر تحميل مؤشرات الأداء');
     } finally {
-      setLoadingTable(false);
+      setLoadingSnapshots(false);
+    }
+  };
+
+  const fetchAssignments = async () => {
+    setLoadingAssignments(true);
+    try {
+      const res = await api.get('/kpis/assignments', {
+        params: {
+          periodType,
+          year: Number(year),
+          value: periodType === 'YEARLY' ? undefined : Number(value),
+        },
+      });
+
+      const rows = (res.data?.rows || []).map((row) => ({
+        ...row,
+        assignedCoursesCountInput:
+          row.assignedCoursesCount === null || row.assignedCoursesCount === undefined
+            ? ''
+            : String(row.assignedCoursesCount),
+        notesInput: row.notes || '',
+      }));
+
+      setAssignmentRows(rows);
+    } catch (err) {
+      toast.error('تعذر تحميل سجل الإسناد');
+    } finally {
+      setLoadingAssignments(false);
     }
   };
 
   useEffect(() => {
+    fetchAssignments();
     fetchSnapshots();
+    setSelectedSnapshot(null);
+    setNote('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodType, periodLabel]);
 
   const handleCalculate = async () => {
-    setLoading(true);
+    setLoadingCalculation(true);
     try {
       await api.post('/kpis/calculate', {
         periodType,
@@ -120,11 +173,11 @@ export default function KpisPage() {
         value: periodType === 'YEARLY' ? undefined : Number(value),
       });
       toast.success('تم احتساب مؤشرات الأداء');
-      fetchSnapshots();
+      await fetchSnapshots();
     } catch (err) {
       toast.error(err.response?.data?.message || 'تعذر احتساب مؤشرات الأداء');
     } finally {
-      setLoading(false);
+      setLoadingCalculation(false);
     }
   };
 
@@ -169,6 +222,60 @@ export default function KpisPage() {
     }
   };
 
+  const handleAssignmentInputChange = (userId, field, newValue) => {
+    setAssignmentRows((prev) =>
+      prev.map((row) =>
+        row.userId === userId
+          ? {
+              ...row,
+              [field]: newValue,
+            }
+          : row,
+      ),
+    );
+  };
+
+  const handleSaveAssignment = async (row) => {
+    const countValue = String(row.assignedCoursesCountInput ?? '').trim();
+
+    if (countValue === '' || Number.isNaN(Number(countValue)) || Number(countValue) < 0) {
+      toast.error('أدخل عددًا صحيحًا للدورات المسندة');
+      return;
+    }
+
+    setSavingAssignments((prev) => ({ ...prev, [row.userId]: true }));
+    try {
+      await api.post('/kpis/assignments', {
+        userId: row.userId,
+        periodType,
+        year: Number(year),
+        value: periodType === 'YEARLY' ? undefined : Number(value),
+        assignedCoursesCount: Number(countValue),
+        notes: row.notesInput || '',
+      });
+
+      toast.success(`تم حفظ إسناد ${row.employeeName}`);
+      await fetchAssignments();
+      await fetchSnapshots();
+
+      if (
+        selectedSnapshot &&
+        selectedSnapshot.userId === row.userId &&
+        selectedSnapshot.periodType === periodType &&
+        selectedSnapshot.periodLabel === periodLabel
+      ) {
+        const res = await api.get(
+          `/kpis/${row.userId}/${periodType}/${periodLabel}`,
+        );
+        setSelectedSnapshot(res.data);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'تعذر حفظ سجل الإسناد');
+    } finally {
+      setSavingAssignments((prev) => ({ ...prev, [row.userId]: false }));
+    }
+  };
+
   const topPerformer = snapshots[0];
   const lowPerformer = snapshots.length ? snapshots[snapshots.length - 1] : null;
   const averageScore = snapshots.length
@@ -178,8 +285,18 @@ export default function KpisPage() {
       )
     : '-';
 
-  const inputClass =
-    'border border-border rounded-2xl px-3 py-2.5 text-sm bg-white text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10';
+  const totalAssignedCourses = assignmentRows.reduce(
+    (sum, row) => sum + Number(row.assignedCoursesCount || 0),
+    0,
+  );
+  const totalActualCourses = assignmentRows.reduce(
+    (sum, row) => sum + Number(row.actualCoursesCount || 0),
+    0,
+  );
+  const totalMissingCourses = assignmentRows.reduce(
+    (sum, row) => sum + Number(row.missingCoursesCount || 0),
+    0,
+  );
 
   return (
     <MainLayout>
@@ -187,9 +304,9 @@ export default function KpisPage() {
         <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <h1 className="text-2xl font-extrabold text-primary">مؤشرات الأداء KPI</h1>
+              <h1 className="text-2xl font-extrabold text-primary">مؤشرات الأداء</h1>
               <p className="mt-1 text-sm text-text-soft">
-                لوحة المدير لقياس الأداء التشغيلي وجودة إغلاق الدورات ومتابعة الموظفين
+                إدارة الإسناد الشهري ومراجعة أداء المستخدمين وجودة إقفال الدورات
               </p>
             </div>
 
@@ -266,10 +383,10 @@ export default function KpisPage() {
 
               <button
                 onClick={handleCalculate}
-                disabled={loading}
+                disabled={loadingCalculation}
                 className="rounded-2xl bg-primary px-5 py-2.5 text-sm font-bold text-white transition hover:bg-primary-dark disabled:opacity-60"
               >
-                {loading ? 'جاري الاحتساب...' : 'احتساب المؤشرات'}
+                {loadingCalculation ? 'جاري الاحتساب...' : 'احتساب المؤشرات'}
               </button>
             </div>
           </div>
@@ -277,12 +394,139 @@ export default function KpisPage() {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <SummaryCard title="الفترة الحالية" value={periodLabel} />
+          <SummaryCard title="إجمالي الدورات المسندة" value={totalAssignedCourses} />
+          <SummaryCard title="إجمالي الدورات الفعلية" value={totalActualCourses} />
+          <SummaryCard
+            title="فجوة التسجيل"
+            value={totalMissingCourses}
+            subtext={totalMissingCourses > 0 ? 'يوجد فرق بين الإسناد والتسجيل الفعلي' : 'لا توجد فجوة'}
+          />
+        </div>
+
+        <div className="overflow-hidden rounded-3xl border border-border bg-white shadow-card">
+          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <div>
+              <h2 className="text-lg font-extrabold text-primary">سجل إسناد الدورات</h2>
+              <p className="mt-1 text-sm text-text-soft">
+                أدخل عدد الدورات المسندة لكل مستخدم، وسيقارن النظام العدد الفعلي المسجل تلقائيًا
+              </p>
+            </div>
+            <Badge tone="gray">{periodLabel}</Badge>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-background text-text-soft">
+                <tr>
+                  <th className="px-4 py-3 text-right font-bold">اسم المستخدم</th>
+                  <th className="px-4 py-3 text-right font-bold">الفترة</th>
+                  <th className="px-4 py-3 text-right font-bold">عدد الدورات الفعلي</th>
+                  <th className="px-4 py-3 text-right font-bold">عدد الدورات المسندة</th>
+                  <th className="px-4 py-3 text-right font-bold">ملاحظات</th>
+                  <th className="px-4 py-3 text-right font-bold">تعديل</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingAssignments ? (
+                  <tr>
+                    <td colSpan="6" className="px-4 py-10 text-center text-text-soft">
+                      جاري تحميل سجل الإسناد...
+                    </td>
+                  </tr>
+                ) : assignmentRows.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="px-4 py-10 text-center text-text-soft">
+                      لا توجد بيانات مستخدمين لهذه الفترة
+                    </td>
+                  </tr>
+                ) : (
+                  assignmentRows.map((row) => (
+                    <tr key={row.userId} className="border-t border-border hover:bg-background transition">
+                      <td className="px-4 py-3">
+                        <div className="font-bold text-text-main">{row.employeeName}</div>
+                        <div className="mt-1 text-xs text-text-soft">{row.projectName}</div>
+                      </td>
+                      <td className="px-4 py-3 text-text-main">{row.periodLabel}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1">
+                          <span className="font-extrabold text-primary">{row.actualCoursesCount}</span>
+                          <Badge tone={toneByCoverage(row.courseRegistrationCoverageRate)}>
+                            نسبة التغطية: {formatNumber(row.courseRegistrationCoverageRate)}%
+                          </Badge>
+                          {Number(row.missingCoursesCount) > 0 ? (
+                            <div className="text-xs font-bold text-danger">
+                              دورات غير مسجلة: {row.missingCoursesCount}
+                            </div>
+                          ) : null}
+                          {Number(row.extraCoursesCount) > 0 ? (
+                            <div className="text-xs font-bold text-warning">
+                              زيادة فعلية: {row.extraCoursesCount}
+                            </div>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="number"
+                          min="0"
+                          value={row.assignedCoursesCountInput}
+                          onChange={(e) =>
+                            handleAssignmentInputChange(
+                              row.userId,
+                              'assignedCoursesCountInput',
+                              e.target.value,
+                            )
+                          }
+                          className="w-28 rounded-2xl border border-border bg-white px-3 py-2 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <textarea
+                          value={row.notesInput}
+                          onChange={(e) =>
+                            handleAssignmentInputChange(row.userId, 'notesInput', e.target.value)
+                          }
+                          className="min-h-[72px] w-full min-w-[240px] rounded-2xl border border-border bg-white px-3 py-2 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+                          placeholder="ملاحظات مختصرة"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => handleSaveAssignment(row)}
+                          disabled={!!savingAssignments[row.userId]}
+                          className="rounded-2xl bg-primary px-4 py-2 text-sm font-bold text-white transition hover:bg-primary-dark disabled:opacity-60"
+                        >
+                          {savingAssignments[row.userId] ? 'جاري الحفظ...' : 'حفظ'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <SummaryCard title="عدد الموظفين" value={snapshots.length} />
           <SummaryCard title="متوسط الدرجة" value={averageScore} />
           <SummaryCard
             title="الأعلى أداءً"
-            value={topPerformer ? topPerformer.user?.firstName || topPerformer.userId : '-'}
+            value={
+              topPerformer
+                ? `${topPerformer.user?.firstName || ''} ${topPerformer.user?.lastName || ''}`.trim()
+                : '-'
+            }
             subtext={topPerformer ? `الدرجة: ${formatNumber(topPerformer.finalScore)}` : ''}
+          />
+          <SummaryCard
+            title="الأقل أداءً"
+            value={
+              lowPerformer
+                ? `${lowPerformer.user?.firstName || ''} ${lowPerformer.user?.lastName || ''}`.trim()
+                : '-'
+            }
+            subtext={lowPerformer ? `الدرجة: ${formatNumber(lowPerformer.finalScore)}` : ''}
           />
         </div>
 
@@ -291,16 +535,11 @@ export default function KpisPage() {
             <div>
               <h2 className="text-lg font-extrabold text-primary">نتائج الموظفين</h2>
               <p className="mt-1 text-sm text-text-soft">
-                مقارنة مباشرة حسب المؤشرات المحسوبة للفترة المحددة
+                نتائج الأداء بعد مقارنة الإسناد الفعلي بعدد الدورات المسجلة وبقية المؤشرات التشغيلية
               </p>
             </div>
 
-            {lowPerformer ? (
-              <Badge tone="amber">
-                أقل نتيجة: {lowPerformer.user?.firstName} {lowPerformer.user?.lastName} —{' '}
-                {formatNumber(lowPerformer.finalScore)}
-              </Badge>
-            ) : null}
+            <Badge tone="gray">{periodLabel}</Badge>
           </div>
 
           <div className="overflow-x-auto">
@@ -309,25 +548,26 @@ export default function KpisPage() {
                 <tr>
                   <th className="px-4 py-3 text-right font-bold">الموظف</th>
                   <th className="px-4 py-3 text-right font-bold">المشروع</th>
+                  <th className="px-4 py-3 text-right font-bold">المسند</th>
+                  <th className="px-4 py-3 text-right font-bold">الفعلي</th>
+                  <th className="px-4 py-3 text-right font-bold">الفجوة</th>
+                  <th className="px-4 py-3 text-right font-bold">التغطية</th>
                   <th className="px-4 py-3 text-right font-bold">الدرجة</th>
                   <th className="px-4 py-3 text-right font-bold">التصنيف</th>
                   <th className="px-4 py-3 text-right font-bold">نسبة الإنجاز</th>
-                  <th className="px-4 py-3 text-right font-bold">اعتماد من أول مرة</th>
-                  <th className="px-4 py-3 text-right font-bold">معدل الإعادة</th>
-                  <th className="px-4 py-3 text-right font-bold">معدل الرفض</th>
                   <th className="px-4 py-3 text-right font-bold">الإجراءات</th>
                 </tr>
               </thead>
               <tbody>
-                {loadingTable ? (
+                {loadingSnapshots ? (
                   <tr>
-                    <td colSpan="9" className="px-4 py-10 text-center text-text-soft">
+                    <td colSpan="10" className="px-4 py-10 text-center text-text-soft">
                       جاري التحميل...
                     </td>
                   </tr>
                 ) : snapshots.length === 0 ? (
                   <tr>
-                    <td colSpan="9" className="px-4 py-10 text-center text-text-soft">
+                    <td colSpan="10" className="px-4 py-10 text-center text-text-soft">
                       لا توجد نتائج لهذه الفترة
                     </td>
                   </tr>
@@ -342,37 +582,36 @@ export default function KpisPage() {
                       <td className="px-4 py-3 text-text-main">
                         {item.user?.operationalProject?.name || '-'}
                       </td>
+                      <td className="px-4 py-3 font-bold text-text-main">
+                        {item.assignedCoursesCount ?? 0}
+                      </td>
+                      <td className="px-4 py-3 font-bold text-primary">
+                        {item.actualCoursesCount ?? 0}
+                      </td>
+                      <td className="px-4 py-3">
+                        {Number(item.missingCoursesCount) > 0 ? (
+                          <Badge tone="red">ناقص {item.missingCoursesCount}</Badge>
+                        ) : Number(item.extraCoursesCount) > 0 ? (
+                          <Badge tone="amber">زيادة {item.extraCoursesCount}</Badge>
+                        ) : (
+                          <Badge tone="green">مطابق</Badge>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tone={toneByCoverage(item.courseRegistrationCoverageRate)}>
+                          {formatNumber(item.courseRegistrationCoverageRate)}%
+                        </Badge>
+                      </td>
                       <td className="px-4 py-3 font-extrabold text-primary">
                         {formatNumber(item.finalScore)}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge
-                          tone={
-                            item.performanceLevel === 'OUTSTANDING'
-                              ? 'green'
-                              : item.performanceLevel === 'VERY_GOOD'
-                                ? 'blue'
-                                : item.performanceLevel === 'GOOD'
-                                  ? 'gray'
-                                  : item.performanceLevel === 'NEEDS_IMPROVEMENT'
-                                    ? 'amber'
-                                    : 'red'
-                          }
-                        >
-                          {formatLevel(item.performanceLevel)}
+                        <Badge tone={toneByLevel(item.performanceLevel)}>
+                          {item.performanceLevelLabel || formatLevel(item.performanceLevel)}
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-text-main">
                         {formatNumber(item.closureCompletionRate)}%
-                      </td>
-                      <td className="px-4 py-3 text-text-main">
-                        {formatNumber(item.firstPassApprovalRate)}%
-                      </td>
-                      <td className="px-4 py-3 text-text-main">
-                        {formatNumber(item.returnRate)}%
-                      </td>
-                      <td className="px-4 py-3 text-text-main">
-                        {formatNumber(item.rejectRate)}%
                       </td>
                       <td className="px-4 py-3">
                         <button
@@ -405,32 +644,54 @@ export default function KpisPage() {
 
               <div className="flex flex-wrap gap-2">
                 <Badge tone="green">الدرجة: {formatNumber(selectedSnapshot.finalScore)}</Badge>
-                <Badge tone="blue">الإنتاجية: {formatNumber(selectedSnapshot.productivityScore)}</Badge>
-                <Badge tone="amber">السرعة: {formatNumber(selectedSnapshot.speedScore)}</Badge>
-                <Badge tone="gray">الجودة: {formatNumber(selectedSnapshot.qualityScore)}</Badge>
+                <Badge tone="blue">
+                  الإسناد: {selectedSnapshot.assignedCoursesCount ?? 0}
+                </Badge>
+                <Badge tone="gray">
+                  الفعلي: {selectedSnapshot.actualCoursesCount ?? 0}
+                </Badge>
+                <Badge tone={toneByCoverage(selectedSnapshot.courseRegistrationCoverageRate)}>
+                  التغطية: {formatNumber(selectedSnapshot.courseRegistrationCoverageRate)}%
+                </Badge>
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <SummaryCard
-                title="نسبة الإنجاز"
-                value={`${formatNumber(selectedSnapshot.closureCompletionRate)}%`}
+                title="الدورات المسندة"
+                value={selectedSnapshot.assignedCoursesCount ?? 0}
               />
               <SummaryCard
-                title="إغلاق الدورات المستحقة"
-                value={`${formatNumber(selectedSnapshot.dueCourseClosureRate)}%`}
+                title="الدورات الفعلية"
+                value={selectedSnapshot.actualCoursesCount ?? 0}
               />
               <SummaryCard
-                title="اعتماد من أول مرة"
-                value={`${formatNumber(selectedSnapshot.firstPassApprovalRate)}%`}
+                title="الدورات غير المسجلة"
+                value={selectedSnapshot.missingCoursesCount ?? 0}
               />
               <SummaryCard
                 title="مستوى الأداء"
-                value={formatLevel(selectedSnapshot.performanceLevel)}
+                value={selectedSnapshot.performanceLevelLabel || formatLevel(selectedSnapshot.performanceLevel)}
               />
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="rounded-3xl border border-border p-4">
+                <h4 className="mb-3 font-extrabold text-text-main">مؤشرات الإسناد والتسجيل</h4>
+                <div className="space-y-2 text-sm text-text-main">
+                  <div>عدد الدورات المسندة: {selectedSnapshot.assignedCoursesCount ?? 0}</div>
+                  <div>عدد الدورات الفعلية: {selectedSnapshot.actualCoursesCount ?? 0}</div>
+                  <div>الدورات غير المسجلة: {selectedSnapshot.missingCoursesCount ?? 0}</div>
+                  <div>الزيادة الفعلية: {selectedSnapshot.extraCoursesCount ?? 0}</div>
+                  <div>
+                    نسبة التغطية: {formatNumber(selectedSnapshot.courseRegistrationCoverageRate)}%
+                  </div>
+                  <div>
+                    الملاحظات على الإسناد: {selectedSnapshot.assignmentNotes || '-'}
+                  </div>
+                </div>
+              </div>
+
               <div className="rounded-3xl border border-border p-4">
                 <h4 className="mb-3 font-extrabold text-text-main">المؤشرات التشغيلية</h4>
                 <div className="space-y-2 text-sm text-text-main">
@@ -442,9 +703,35 @@ export default function KpisPage() {
                   <div>العناصر المرفوضة: {selectedSnapshot.rejectedElementsCount}</div>
                 </div>
               </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="rounded-3xl border border-border p-4">
+                <h4 className="mb-3 font-extrabold text-text-main">مؤشرات الجودة والانضباط</h4>
+                <div className="space-y-2 text-sm text-text-main">
+                  <div>
+                    نسبة الإنجاز: {formatNumber(selectedSnapshot.closureCompletionRate)}%
+                  </div>
+                  <div>
+                    إغلاق الدورات المستحقة: {formatNumber(selectedSnapshot.dueCourseClosureRate)}%
+                  </div>
+                  <div>
+                    اعتماد من أول مرة: {formatNumber(selectedSnapshot.firstPassApprovalRate)}%
+                  </div>
+                  <div>
+                    معدل الإعادة: {formatNumber(selectedSnapshot.returnRate)}%
+                  </div>
+                  <div>
+                    معدل الرفض: {formatNumber(selectedSnapshot.rejectRate)}%
+                  </div>
+                  <div>
+                    الدورات المتأخرة: {formatNumber(selectedSnapshot.overdueCoursesRate)}%
+                  </div>
+                </div>
+              </div>
 
               <div className="rounded-3xl border border-border p-4">
-                <h4 className="mb-3 font-extrabold text-text-main">مؤشرات السرعة والانضباط</h4>
+                <h4 className="mb-3 font-extrabold text-text-main">مؤشرات السرعة</h4>
                 <div className="space-y-2 text-sm text-text-main">
                   <div>
                     متوسط تقديم العنصر: {formatNumber(selectedSnapshot.avgElementSubmissionHours)} ساعة
@@ -456,10 +743,7 @@ export default function KpisPage() {
                     متوسط تأخر إغلاق الدورة: {formatNumber(selectedSnapshot.avgCourseClosureDelayDays)} يوم
                   </div>
                   <div>
-                    نسبة الدورات المتأخرة: {formatNumber(selectedSnapshot.overdueCoursesRate)}%
-                  </div>
-                  <div>
-                    نسبة العناصر المتأخرة: {formatNumber(selectedSnapshot.overdueElementsRate)}%
+                    العناصر المتأخرة: {formatNumber(selectedSnapshot.overdueElementsRate)}%
                   </div>
                   <div>
                     العناصر المعلقة: {formatNumber(selectedSnapshot.stalePendingElementsRate)}%
@@ -475,7 +759,7 @@ export default function KpisPage() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 className="min-h-[110px] w-full rounded-2xl border border-border p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
-                placeholder="اكتب ملاحظة مهنية عن أداء الموظف خلال هذه الفترة"
+                placeholder="اكتب ملاحظة مهنية عن أداء المستخدم خلال هذه الفترة"
               />
 
               <div className="flex justify-end">
