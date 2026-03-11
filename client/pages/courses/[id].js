@@ -35,21 +35,24 @@ export default function CourseDetail() {
   const handleReportDownload = async (elementId) => {
     try {
       const res = await api.get(`/closure/${elementId}/export`, {
-        responseType: 'blob',
+        responseType: 'text',
+        headers: {
+          Accept: 'text/html',
+        },
       });
 
-      const blob = new Blob([res.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `report-${elementId}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert('تعذر فتح نافذة الطباعة. تأكد من السماح بالنوافذ المنبثقة.');
+        return;
+      }
+
+      printWindow.document.open();
+      printWindow.document.write(res.data);
+      printWindow.document.close();
     } catch (err) {
       console.error(err);
-      alert('تعذر تحميل التقرير');
+      alert('تعذر فتح التقرير');
     }
   };
 
