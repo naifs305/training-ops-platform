@@ -1,769 +1,890 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { KpiPeriodType, PerformanceLevel } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
-import { AuditService } from '../audit/audit.service';
+import { useEffect, useMemo, useState } from 'react';
+import MainLayout from '../components/layout/MainLayout';
+import api from '../lib/axios';
+import toast from 'react-hot-toast';
 
-@Injectable()
-export class KpisService {
-  constructor(
-    private prisma: PrismaService,
-    private audit: AuditService,
-  ) {}
+const periodTypeOptions = [
+  { value: 'MONTHLY', label: 'شهري' },
+  { value: 'QUARTERLY', label: 'ربع سنوي' },
+  { value: 'YEARLY', label: 'سنوي' },
+];
 
-  private getPeriodRange(periodType: KpiPeriodType, year: number, value?: number) {
-    if (periodType === 'MONTHLY') {
-      if (!value || value < 1 || value > 12) {
-        throw new BadRequestException('الشهر غير صحيح');
-      }
+const quarterOptions = [
+  { value: 1, label: 'الربع الأول' },
+  { value: 2, label: 'الربع الثاني' },
+  { value: 3, label: 'الربع الثالث' },
+  { value: 4, label: 'الربع الرابع' },
+];
 
-      const start = new Date(year, value - 1, 1, 0, 0, 0, 0);
-      const end = new Date(year, value, 0, 23, 59, 59, 999);
+function formatLevel(level) {
+  const map = {
+    OUTSTANDING: 'متميز',
+    VERY_GOOD: 'جيد جدًا',
+    GOOD: 'جيد',
+    NEEDS_IMPROVEMENT: 'يحتاج تحسين',
+    WEAK: 'ضعيف',
+  };
+  return map[level] || level || '-';
+}
 
-      return {
-        label: `${year}-${String(value).padStart(2, '0')}`,
-        start,
-        end,
-      };
-    }
+function formatNumber(value, digits = 2) {
+  if (value === null || value === undefined || value === '') return '-';
+  const num = Number(value);
+  if (Number.isNaN(num)) return value;
+  return num.toFixed(digits);
+}
 
-    if (periodType === 'QUARTERLY') {
-      if (!value || value < 1 || value > 4) {
-        throw new BadRequestException('الربع غير صحيح');
-      }
+function Badge({ children, tone = 'default' }) {
+  const tones = {
+    green: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    blue: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    amber: 'bg-amber-50 text-amber-700 border-amber-200',
+    red: 'bg-red-50 text-red-700 border-red-200',
+    gray: 'bg-slate-50 text-slate-700 border-slate-200',
+    soft: 'bg-background text-text-main border-border',
+    default: 'bg-slate-50 text-slate-700 border-slate-200',
+  };
 
-      const startMonth = (value - 1) * 3;
-      const endMonth = startMonth + 2;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-extrabold ${tones[tone] || tones.default}`}
+    >
+      {children}
+    </span>
+  );
+}
 
-      const start = new Date(year, startMonth, 1, 0, 0, 0, 0);
-      const end = new Date(year, endMonth + 1, 0, 23, 59, 59, 999);
+function SummaryCard({ title, value, subtext, tone = 'primary' }) {
+  const map = {
+    primary: 'text-primary',
+    green: 'text-emerald-700',
+    red: 'text-red-700',
+    amber: 'text-amber-700',
+    gray: 'text-text-main',
+  };
 
-      return {
-        label: `${year}-Q${value}`,
-        start,
-        end,
-      };
-    }
+  return (
+    <div className="rounded-3xl border border-border bg-white p-4 shadow-card">
+      <div className="mb-1 text-xs font-bold text-text-soft">{title}</div>
+      <div className={`text-2xl font-extrabold ${map[tone] || map.primary}`}>{value}</div>
+      {subtext ? <div className="mt-2 text-xs text-text-soft">{subtext}</div> : null}
+    </div>
+  );
+}
 
-    const start = new Date(year, 0, 1, 0, 0, 0, 0);
-    const end = new Date(year, 11, 31, 23, 59, 59, 999);
+function SmallMetric({ label, value, tone = 'text-text-main' }) {
+  return (
+    <div className="flex items-center justify-between rounded-2xl border border-border bg-background px-4 py-3">
+      <span className="text-sm font-medium text-text-soft">{label}</span>
+      <span className={`text-sm font-extrabold ${tone}`}>{value}</span>
+    </div>
+  );
+}
 
-    return {
-      label: `${year}`,
-      start,
-      end,
-    };
-  }
+function HorizontalBar({ label, value, colorClass = 'bg-primary' }) {
+  const safe = Math.max(0, Math.min(100, Number(value || 0)));
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-bold text-text-main">{label}</span>
+        <span className="font-extrabold text-text-soft">{formatNumber(safe)}%</span>
+      </div>
+      <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+        <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${safe}%` }} />
+      </div>
+    </div>
+  );
+}
 
-  private toPercent(numerator: number, denominator: number) {
-    if (!denominator) return 0;
-    return Number(((numerator / denominator) * 100).toFixed(2));
-  }
+function toneByCoverage(rate) {
+  if (rate >= 100) return 'green';
+  if (rate >= 80) return 'amber';
+  return 'red';
+}
 
-  private toAverage(values: number[]) {
-    if (!values.length) return 0;
-    return Number((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2));
-  }
+function toneByPerformance(item) {
+  if (!item?.isSubjectToEvaluation) return 'gray';
+  if (item?.performanceLevel === 'OUTSTANDING') return 'green';
+  if (item?.performanceLevel === 'VERY_GOOD') return 'blue';
+  if (item?.performanceLevel === 'GOOD') return 'gray';
+  if (item?.performanceLevel === 'NEEDS_IMPROVEMENT') return 'amber';
+  return 'red';
+}
 
-  private clampScore(value: number) {
-    if (value < 0) return 0;
-    if (value > 100) return 100;
-    return Number(value.toFixed(2));
-  }
+function toneByCommitment(status) {
+  if (status === 'COMMITTED') return 'green';
+  if (status === 'NOT_COMMITTED') return 'red';
+  if (status === 'NEEDS_FOLLOWUP') return 'amber';
+  return 'gray';
+}
 
-  private getPerformanceLevel(score: number): PerformanceLevel {
-    if (score >= 90) return 'OUTSTANDING';
-    if (score >= 80) return 'VERY_GOOD';
-    if (score >= 70) return 'GOOD';
-    if (score >= 60) return 'NEEDS_IMPROVEMENT';
-    return 'WEAK';
-  }
+function toneByDiscipline(status) {
+  if (status === 'DISCIPLINED') return 'green';
+  if (status === 'UNDISCIPLINED') return 'red';
+  if (status === 'NEEDS_FOLLOWUP') return 'amber';
+  return 'gray';
+}
 
-  private levelLabel(level: PerformanceLevel) {
-    const map: Record<PerformanceLevel, string> = {
-      OUTSTANDING: 'متميز',
-      VERY_GOOD: 'جيد جدًا',
-      GOOD: 'جيد',
-      NEEDS_IMPROVEMENT: 'يحتاج تحسين',
-      WEAK: 'ضعيف',
-    };
-    return map[level] || level;
-  }
+export default function KpisPage() {
+  const currentYear = new Date().getFullYear();
+  const [periodType, setPeriodType] = useState('MONTHLY');
+  const [year, setYear] = useState(currentYear);
+  const [value, setValue] = useState(new Date().getMonth() + 1);
 
-  private calculateWeightedScores(metrics: {
-    assignmentCoverageRate: number;
-    missingCoursesRate: number;
-    closureCompletionRate: number;
-    submissionRate: number;
-    firstPassSubmissionRate: number;
-    returnRate: number;
-    rejectRate: number;
-    operationalErrorRate: number;
-    avgElementSubmissionHours: number;
-    avgResubmissionHours: number;
-    overdueElementsRate: number;
-    stalePendingElementsRate: number;
-  }) {
-    const coverageScore = Math.max(
-      0,
-      metrics.assignmentCoverageRate - metrics.missingCoursesRate * 0.5,
-    );
+  const [loadingCalculation, setLoadingCalculation] = useState(false);
+  const [loadingSnapshots, setLoadingSnapshots] = useState(false);
+  const [loadingAssignments, setLoadingAssignments] = useState(false);
+  const [savingAssignments, setSavingAssignments] = useState({});
 
-    const completionScore =
-      metrics.closureCompletionRate * 0.55 +
-      metrics.submissionRate * 0.45;
+  const [snapshots, setSnapshots] = useState([]);
+  const [assignmentRows, setAssignmentRows] = useState([]);
+  const [selectedSnapshot, setSelectedSnapshot] = useState(null);
+  const [note, setNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
 
-    const productivityScore =
-      coverageScore * 0.45 +
-      completionScore * 0.55;
+  const periodLabel = useMemo(() => {
+    if (periodType === 'MONTHLY') return `${year}-${String(value).padStart(2, '0')}`;
+    if (periodType === 'QUARTERLY') return `${year}-Q${value}`;
+    return `${year}`;
+  }, [periodType, year, value]);
 
-    const firstPassScore = metrics.firstPassSubmissionRate;
-    const returnPenaltyScore = 100 - metrics.returnRate;
-    const rejectPenaltyScore = 100 - metrics.rejectRate;
-    const errorPenaltyScore = 100 - metrics.operationalErrorRate;
+  const years = useMemo(() => {
+    return Array.from({ length: 5 }, (_, i) => currentYear - i);
+  }, [currentYear]);
 
-    const qualityScore =
-      firstPassScore * 0.4 +
-      returnPenaltyScore * 0.2 +
-      rejectPenaltyScore * 0.15 +
-      errorPenaltyScore * 0.25;
+  const inputClass =
+    'border border-border rounded-2xl px-3 py-2.5 text-sm bg-white text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10';
 
-    const elementSubmissionScore = Math.max(0, 100 - metrics.avgElementSubmissionHours * 2);
-    const resubmissionScore = Math.max(0, 100 - metrics.avgResubmissionHours * 2);
+  const evaluatedSnapshots = useMemo(
+    () => snapshots.filter((item) => item.isSubjectToEvaluation),
+    [snapshots],
+  );
 
-    const speedScore =
-      elementSubmissionScore * 0.7 +
-      resubmissionScore * 0.3;
-
-    const disciplineScore =
-      (100 - metrics.overdueElementsRate) * 0.6 +
-      (100 - metrics.stalePendingElementsRate) * 0.4;
-
-    const finalScore =
-      productivityScore * 0.35 +
-      qualityScore * 0.30 +
-      speedScore * 0.20 +
-      disciplineScore * 0.15;
-
-    return {
-      productivityScore: this.clampScore(productivityScore),
-      speedScore: this.clampScore(speedScore),
-      qualityScore: this.clampScore(qualityScore),
-      disciplineScore: this.clampScore(disciplineScore),
-      finalScore: this.clampScore(finalScore),
-    };
-  }
-
-  async calculateAndStore(
-    periodType: KpiPeriodType,
-    year: number,
-    value: number | undefined,
-    managerId: string,
-  ) {
-    const { label, start, end } = this.getPeriodRange(periodType, year, value);
-
-    const employees = await this.prisma.user.findMany({
-      where: {
-        isActive: true,
-        roles: { has: 'EMPLOYEE' },
-      },
-      include: {
-        operationalProject: true,
-      },
-      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
-    });
-
-    const snapshots = [];
-
-    for (const employee of employees) {
-      const assignment = await this.prisma.courseAssignmentRegister.findUnique({
-        where: {
-          userId_periodType_periodLabel: {
-            userId: employee.id,
-            periodType,
-            periodLabel: label,
-          },
-        },
-      });
-
-      const courses = await this.prisma.course.findMany({
-        where: {
-          primaryEmployeeId: employee.id,
-        },
-        include: {
-          closureElements: {
-            include: {
-              element: true,
-            },
-          },
-        },
-      });
-
-      const relevantCourses = courses.filter((course) => {
-        const courseStart = new Date(course.startDate);
-        const courseEnd = new Date(course.endDate);
-        return courseStart <= end && courseEnd >= start;
-      });
-
-      const relevantElements = relevantCourses.flatMap((course) =>
-        course.closureElements.filter((el) => el.status !== 'NOT_APPLICABLE'),
-      );
-
-      const submittedElements = relevantElements.filter((el) => !!el.executionAt);
-      const approvedElements = relevantElements.filter((el) => el.status === 'APPROVED');
-      const returnedElements = relevantElements.filter((el) => el.status === 'RETURNED');
-      const rejectedElements = relevantElements.filter((el) => el.status === 'REJECTED');
-      const pendingApprovalElements = relevantElements.filter(
-        (el) => el.status === 'PENDING_APPROVAL',
-      );
-      const completedElements = [...approvedElements, ...pendingApprovalElements];
-
-      const now = new Date();
-
-      const overdueElements = relevantElements.filter((el) => {
-        if (el.status !== 'NOT_STARTED' && el.status !== 'RETURNED') return false;
-        const course = relevantCourses.find((c) => c.id === el.courseId);
-        if (!course) return false;
-        return new Date(course.endDate) < now;
-      });
-
-      const stalePendingElements = relevantElements.filter((el) => {
-        if (el.status !== 'NOT_STARTED' && el.status !== 'RETURNED') return false;
-
-        const baseDate =
-          el.status === 'RETURNED' && el.decisionAt
-            ? new Date(el.decisionAt)
-            : relevantCourses.find((c) => c.id === el.courseId)?.createdAt;
-
-        if (!baseDate) return false;
-
-        const diffHours = (now.getTime() - new Date(baseDate).getTime()) / (1000 * 60 * 60);
-        return diffHours > 72;
-      });
-
-      const submittedWithoutReturnOrReject = submittedElements.filter(
-        (el) => el.status !== 'RETURNED' && el.status !== 'REJECTED',
-      );
-
-      const elementSubmissionHours = submittedElements.map((el) => {
-        const course = relevantCourses.find((c) => c.id === el.courseId);
-        if (!course || !el.executionAt) return 0;
-        const diff = new Date(el.executionAt).getTime() - new Date(course.createdAt).getTime();
-        return Math.max(0, diff / (1000 * 60 * 60));
-      });
-
-      const resubmissionHours = submittedElements
-        .filter((el) => el.decisionAt && el.executionAt && el.status !== 'APPROVED')
-        .map((el) => {
-          const diff = new Date(el.executionAt!).getTime() - new Date(el.decisionAt!).getTime();
-          return Math.max(0, diff / (1000 * 60 * 60));
-        });
-
-      const assignedCoursesCount = assignment?.assignedCoursesCount ?? 0;
-      const actualCoursesCount = relevantCourses.length;
-      const missingCoursesCount = Math.max(assignedCoursesCount - actualCoursesCount, 0);
-      const extraCoursesCount = Math.max(actualCoursesCount - assignedCoursesCount, 0);
-      const assignmentCoverageRate = this.toPercent(actualCoursesCount, assignedCoursesCount);
-      const missingCoursesRate = this.toPercent(missingCoursesCount, assignedCoursesCount);
-
-      const metrics = {
-        requiredElementsCount: relevantElements.length,
-        completedElementsCount: completedElements.length,
-        closureCompletionRate: this.toPercent(completedElements.length, relevantElements.length),
-
-        submittedElementsCount: submittedElements.length,
-        approvedElementsCount: approvedElements.length,
-        returnedElementsCount: returnedElements.length,
-        rejectedElementsCount: rejectedElements.length,
-
-        submissionRate: this.toPercent(submittedElements.length, relevantElements.length),
-        firstPassSubmissionRate: this.toPercent(
-          submittedWithoutReturnOrReject.length,
-          submittedElements.length,
-        ),
-        returnRate: this.toPercent(returnedElements.length, submittedElements.length),
-        rejectRate: this.toPercent(rejectedElements.length, submittedElements.length),
-        operationalErrorRate: this.toPercent(
-          returnedElements.length + rejectedElements.length,
-          submittedElements.length,
-        ),
-
-        avgElementSubmissionHours: this.toAverage(elementSubmissionHours),
-        avgResubmissionHours: this.toAverage(resubmissionHours),
-
-        overdueElementsCount: overdueElements.length,
-        overdueElementsRate: this.toPercent(overdueElements.length, relevantElements.length),
-
-        stalePendingElementsCount: stalePendingElements.length,
-        stalePendingElementsRate: this.toPercent(
-          stalePendingElements.length,
-          relevantElements.length,
-        ),
-
-        assignmentCoverageRate,
-        missingCoursesRate,
-      };
-
-      const scores = this.calculateWeightedScores({
-        assignmentCoverageRate: metrics.assignmentCoverageRate,
-        missingCoursesRate: metrics.missingCoursesRate,
-        closureCompletionRate: metrics.closureCompletionRate,
-        submissionRate: metrics.submissionRate,
-        firstPassSubmissionRate: metrics.firstPassSubmissionRate,
-        returnRate: metrics.returnRate,
-        rejectRate: metrics.rejectRate,
-        operationalErrorRate: metrics.operationalErrorRate,
-        avgElementSubmissionHours: metrics.avgElementSubmissionHours,
-        avgResubmissionHours: metrics.avgResubmissionHours,
-        overdueElementsRate: metrics.overdueElementsRate,
-        stalePendingElementsRate: metrics.stalePendingElementsRate,
-      });
-
-      const performanceLevel = this.getPerformanceLevel(scores.finalScore);
-
-      const snapshot = await this.prisma.employeeKpiSnapshot.upsert({
-        where: {
-          userId_periodType_periodLabel: {
-            userId: employee.id,
-            periodType,
-            periodLabel: label,
-          },
-        },
-        update: {
-          periodStart: start,
-          periodEnd: end,
-
-          requiredElementsCount: metrics.requiredElementsCount,
-          completedElementsCount: metrics.completedElementsCount,
-          closureCompletionRate: metrics.closureCompletionRate,
-
-          dueCoursesCount: assignedCoursesCount,
-          closedCoursesCount: actualCoursesCount,
-          dueCourseClosureRate: metrics.assignmentCoverageRate,
-
-          submittedElementsCount: metrics.submittedElementsCount,
-          approvedElementsCount: metrics.approvedElementsCount,
-          returnedElementsCount: metrics.returnedElementsCount,
-          rejectedElementsCount: metrics.rejectedElementsCount,
-
-          firstPassApprovalRate: metrics.firstPassSubmissionRate,
-          returnRate: metrics.returnRate,
-          rejectRate: metrics.rejectRate,
-          operationalErrorRate: metrics.operationalErrorRate,
-
-          avgElementSubmissionHours: metrics.avgElementSubmissionHours,
-          avgResubmissionHours: metrics.avgResubmissionHours,
-          avgCourseClosureDelayDays: 0,
-
-          overdueCoursesCount: missingCoursesCount,
-          overdueCoursesRate: metrics.missingCoursesRate,
-
-          overdueElementsCount: metrics.overdueElementsCount,
-          overdueElementsRate: metrics.overdueElementsRate,
-
-          stalePendingElementsCount: metrics.stalePendingElementsCount,
-          stalePendingElementsRate: metrics.stalePendingElementsRate,
-
-          productivityScore: scores.productivityScore,
-          speedScore: scores.speedScore,
-          qualityScore: scores.qualityScore,
-          disciplineScore: scores.disciplineScore,
-          finalScore: scores.finalScore,
-          performanceLevel,
-          settingsId: null,
-        },
-        create: {
-          userId: employee.id,
+  const fetchSnapshots = async () => {
+    setLoadingSnapshots(true);
+    try {
+      const res = await api.get('/kpis', {
+        params: {
           periodType,
-          periodLabel: label,
-          periodStart: start,
-          periodEnd: end,
-
-          requiredElementsCount: metrics.requiredElementsCount,
-          completedElementsCount: metrics.completedElementsCount,
-          closureCompletionRate: metrics.closureCompletionRate,
-
-          dueCoursesCount: assignedCoursesCount,
-          closedCoursesCount: actualCoursesCount,
-          dueCourseClosureRate: metrics.assignmentCoverageRate,
-
-          submittedElementsCount: metrics.submittedElementsCount,
-          approvedElementsCount: metrics.approvedElementsCount,
-          returnedElementsCount: metrics.returnedElementsCount,
-          rejectedElementsCount: metrics.rejectedElementsCount,
-
-          firstPassApprovalRate: metrics.firstPassSubmissionRate,
-          returnRate: metrics.returnRate,
-          rejectRate: metrics.rejectRate,
-          operationalErrorRate: metrics.operationalErrorRate,
-
-          avgElementSubmissionHours: metrics.avgElementSubmissionHours,
-          avgResubmissionHours: metrics.avgResubmissionHours,
-          avgCourseClosureDelayDays: 0,
-
-          overdueCoursesCount: missingCoursesCount,
-          overdueCoursesRate: metrics.missingCoursesRate,
-
-          overdueElementsCount: metrics.overdueElementsCount,
-          overdueElementsRate: metrics.overdueElementsRate,
-
-          stalePendingElementsCount: metrics.stalePendingElementsCount,
-          stalePendingElementsRate: metrics.stalePendingElementsRate,
-
-          productivityScore: scores.productivityScore,
-          speedScore: scores.speedScore,
-          qualityScore: scores.qualityScore,
-          disciplineScore: scores.disciplineScore,
-          finalScore: scores.finalScore,
-          performanceLevel,
-          settingsId: null,
-        },
-        include: {
-          user: {
-            include: {
-              operationalProject: true,
-            },
-          },
+          periodLabel,
         },
       });
-
-      snapshots.push({
-        id: snapshot.id,
-        userId: snapshot.userId,
-        employeeName: `${snapshot.user.firstName} ${snapshot.user.lastName}`,
-        projectName: snapshot.user.operationalProject?.name || '-',
-        assignedCoursesCount,
-        actualCoursesCount,
-        missingCoursesCount,
-        extraCoursesCount,
-        courseRegistrationCoverageRate: assignmentCoverageRate,
-        finalScore: snapshot.finalScore,
-        performanceLevel: this.levelLabel(snapshot.performanceLevel),
-        closureCompletionRate: snapshot.closureCompletionRate,
-        submissionRate: metrics.submissionRate,
-        firstPassApprovalRate: snapshot.firstPassApprovalRate,
-        returnRate: snapshot.returnRate,
-        rejectRate: snapshot.rejectRate,
-        overdueCoursesRate: snapshot.overdueCoursesRate,
-      });
+      setSnapshots(res.data || []);
+    } catch {
+      toast.error('تعذر تحميل مؤشرات الأداء');
+    } finally {
+      setLoadingSnapshots(false);
     }
+  };
 
-    await this.audit.log(
-      managerId,
-      'MANAGER',
-      'KPI_SNAPSHOTS_CALCULATED',
-      {
+  const fetchAssignments = async () => {
+    setLoadingAssignments(true);
+    try {
+      const res = await api.get('/kpis/assignments', {
+        params: {
+          periodType,
+          year: Number(year),
+          value: periodType === 'YEARLY' ? undefined : Number(value),
+        },
+      });
+
+      const rows = (res.data?.rows || []).map((row) => ({
+        ...row,
+        assignedCoursesCountInput:
+          row.assignedCoursesCount === null || row.assignedCoursesCount === undefined
+            ? ''
+            : String(row.assignedCoursesCount),
+        notesInput: row.notes || '',
+      }));
+
+      setAssignmentRows(rows);
+    } catch {
+      toast.error('تعذر تحميل سجل الإسناد');
+    } finally {
+      setLoadingAssignments(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAssignments();
+    fetchSnapshots();
+    setSelectedSnapshot(null);
+    setNote('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodType, periodLabel]);
+
+  const handleCalculate = async () => {
+    setLoadingCalculation(true);
+    try {
+      await api.post('/kpis/calculate', {
         periodType,
-        periodLabel: label,
-        employeesCount: snapshots.length,
-      },
-    );
+        year: Number(year),
+        value: periodType === 'YEARLY' ? undefined : Number(value),
+      });
+      toast.success('تم احتساب مؤشرات الأداء');
+      await fetchSnapshots();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'تعذر احتساب مؤشرات الأداء');
+    } finally {
+      setLoadingCalculation(false);
+    }
+  };
 
-    return {
-      periodType,
-      periodLabel: label,
-      periodStart: start,
-      periodEnd: end,
-      employeesCount: snapshots.length,
-      results: snapshots.sort((a, b) => b.finalScore - a.finalScore),
-    };
-  }
+  const handleOpenDetails = async (snapshot) => {
+    try {
+      const res = await api.get(
+        `/kpis/${snapshot.userId}/${snapshot.periodType}/${snapshot.periodLabel}`,
+      );
+      setSelectedSnapshot(res.data);
+      setNote('');
+    } catch {
+      toast.error('تعذر تحميل تفاصيل الموظف');
+    }
+  };
 
-  async getSnapshots(periodType?: KpiPeriodType, periodLabel?: string) {
-    const snapshots = await this.prisma.employeeKpiSnapshot.findMany({
-      where: {
-        ...(periodType ? { periodType } : {}),
-        ...(periodLabel ? { periodLabel } : {}),
-      },
-      include: {
-        user: {
-          include: {
-            operationalProject: true,
-          },
-        },
-        settings: true,
-        notes: {
-          include: {
-            manager: true,
-          },
-          orderBy: { createdAt: 'desc' },
-        },
-      },
-      orderBy: [{ finalScore: 'desc' }, { createdAt: 'desc' }],
-    });
-
-    const enriched = await Promise.all(
-      snapshots.map(async (snapshot) => {
-        const assignment = await this.prisma.courseAssignmentRegister.findUnique({
-          where: {
-            userId_periodType_periodLabel: {
-              userId: snapshot.userId,
-              periodType: snapshot.periodType,
-              periodLabel: snapshot.periodLabel,
-            },
-          },
-        });
-
-        const actualCoursesCount = await this.prisma.course.count({
-          where: {
-            primaryEmployeeId: snapshot.userId,
-            startDate: { lte: snapshot.periodEnd },
-            endDate: { gte: snapshot.periodStart },
-          },
-        });
-
-        const assignedCoursesCount = assignment?.assignedCoursesCount ?? 0;
-
-        return {
-          ...snapshot,
-          assignedCoursesCount,
-          actualCoursesCount,
-          missingCoursesCount: Math.max(assignedCoursesCount - actualCoursesCount, 0),
-          extraCoursesCount: Math.max(actualCoursesCount - assignedCoursesCount, 0),
-          courseRegistrationCoverageRate: this.toPercent(
-            actualCoursesCount,
-            assignedCoursesCount,
-          ),
-          performanceLevelLabel: this.levelLabel(snapshot.performanceLevel),
-        };
-      }),
-    );
-
-    return enriched;
-  }
-
-  async getEmployeeSnapshotDetails(
-    userId: string,
-    periodType: KpiPeriodType,
-    periodLabel: string,
-  ) {
-    const snapshot = await this.prisma.employeeKpiSnapshot.findUnique({
-      where: {
-        userId_periodType_periodLabel: {
-          userId,
-          periodType,
-          periodLabel,
-        },
-      },
-      include: {
-        user: {
-          include: {
-            operationalProject: true,
-          },
-        },
-        settings: true,
-        notes: {
-          include: {
-            manager: true,
-          },
-          orderBy: { createdAt: 'desc' },
-        },
-      },
-    });
-
-    if (!snapshot) {
-      throw new BadRequestException('لا توجد بيانات KPI لهذه الفترة');
+  const handleSaveNote = async () => {
+    if (!selectedSnapshot?.id) return;
+    if (!note.trim()) {
+      toast.error('اكتب الملاحظة أولًا');
+      return;
     }
 
-    const assignment = await this.prisma.courseAssignmentRegister.findUnique({
-      where: {
-        userId_periodType_periodLabel: {
-          userId,
-          periodType,
-          periodLabel,
-        },
-      },
-    });
-
-    const actualCoursesCount = await this.prisma.course.count({
-      where: {
-        primaryEmployeeId: userId,
-        startDate: { lte: snapshot.periodEnd },
-        endDate: { gte: snapshot.periodStart },
-      },
-    });
-
-    const assignedCoursesCount = assignment?.assignedCoursesCount ?? 0;
-
-    return {
-      ...snapshot,
-      assignedCoursesCount,
-      actualCoursesCount,
-      missingCoursesCount: Math.max(assignedCoursesCount - actualCoursesCount, 0),
-      extraCoursesCount: Math.max(actualCoursesCount - assignedCoursesCount, 0),
-      courseRegistrationCoverageRate: this.toPercent(
-        actualCoursesCount,
-        assignedCoursesCount,
-      ),
-      assignmentNotes: assignment?.notes || null,
-      performanceLevelLabel: this.levelLabel(snapshot.performanceLevel),
-    };
-  }
-
-  async addManagerNote(snapshotId: string, userId: string, managerId: string, note: string) {
-    if (!note?.trim()) {
-      throw new BadRequestException('الملاحظة مطلوبة');
-    }
-
-    const snapshot = await this.prisma.employeeKpiSnapshot.findUnique({
-      where: { id: snapshotId },
-    });
-
-    if (!snapshot) {
-      throw new BadRequestException('سجل KPI غير موجود');
-    }
-
-    const created = await this.prisma.employeeKpiNote.create({
-      data: {
-        snapshotId,
-        userId,
-        managerId,
+    setSavingNote(true);
+    try {
+      await api.post(`/kpis/${selectedSnapshot.id}/notes`, {
+        userId: selectedSnapshot.userId,
         note: note.trim(),
-      },
-      include: {
-        manager: true,
-      },
-    });
+      });
 
-    await this.audit.log(
-      managerId,
-      'MANAGER',
-      'KPI_NOTE_ADDED',
-      {
-        snapshotId,
-        userId,
-      },
+      toast.success('تم حفظ الملاحظة');
+
+      const res = await api.get(
+        `/kpis/${selectedSnapshot.userId}/${selectedSnapshot.periodType}/${selectedSnapshot.periodLabel}`,
+      );
+      setSelectedSnapshot(res.data);
+      setNote('');
+      fetchSnapshots();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'تعذر حفظ الملاحظة');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleAssignmentInputChange = (userId, field, newValue) => {
+    setAssignmentRows((prev) =>
+      prev.map((row) => (row.userId === userId ? { ...row, [field]: newValue } : row)),
     );
+  };
 
-    return created;
-  }
+  const handleSaveAssignment = async (row) => {
+    const countValue = String(row.assignedCoursesCountInput ?? '').trim();
 
-  async getAssignmentRegister(periodType: KpiPeriodType, year: number, value?: number) {
-    const { label, start, end } = this.getPeriodRange(periodType, year, value);
-
-    const employees = await this.prisma.user.findMany({
-      where: {
-        isActive: true,
-        roles: { has: 'EMPLOYEE' },
-      },
-      include: {
-        operationalProject: true,
-      },
-      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
-    });
-
-    const rows = await Promise.all(
-      employees.map(async (employee) => {
-        const register = await this.prisma.courseAssignmentRegister.findUnique({
-          where: {
-            userId_periodType_periodLabel: {
-              userId: employee.id,
-              periodType,
-              periodLabel: label,
-            },
-          },
-        });
-
-        const actualCoursesCount = await this.prisma.course.count({
-          where: {
-            primaryEmployeeId: employee.id,
-            startDate: { lte: end },
-            endDate: { gte: start },
-          },
-        });
-
-        const assignedCoursesCount = register?.assignedCoursesCount ?? 0;
-
-        return {
-          userId: employee.id,
-          employeeName: `${employee.firstName} ${employee.lastName}`,
-          projectName: employee.operationalProject?.name || '-',
-          periodType,
-          periodLabel: label,
-          periodStart: start,
-          periodEnd: end,
-          assignedCoursesCount,
-          actualCoursesCount,
-          notes: register?.notes || '',
-          updatedAt: register?.updatedAt || null,
-          missingCoursesCount: Math.max(assignedCoursesCount - actualCoursesCount, 0),
-          extraCoursesCount: Math.max(actualCoursesCount - assignedCoursesCount, 0),
-          courseRegistrationCoverageRate: this.toPercent(
-            actualCoursesCount,
-            assignedCoursesCount,
-          ),
-        };
-      }),
-    );
-
-    return {
-      periodType,
-      periodLabel: label,
-      periodStart: start,
-      periodEnd: end,
-      rows,
-    };
-  }
-
-  async upsertAssignmentRegister(
-    managerId: string,
-    userId: string,
-    periodType: KpiPeriodType,
-    year: number,
-    value: number | undefined,
-    assignedCoursesCount: number,
-    notes?: string,
-  ) {
-    if (assignedCoursesCount < 0) {
-      throw new BadRequestException('عدد الدورات المسندة غير صحيح');
+    if (countValue === '' || Number.isNaN(Number(countValue)) || Number(countValue) < 0) {
+      toast.error('أدخل عددًا صحيحًا للدورات المسندة');
+      return;
     }
 
-    const employee = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
+    setSavingAssignments((prev) => ({ ...prev, [row.userId]: true }));
+    try {
+      await api.post('/kpis/assignments', {
+        userId: row.userId,
+        periodType,
+        year: Number(year),
+        value: periodType === 'YEARLY' ? undefined : Number(value),
+        assignedCoursesCount: Number(countValue),
+        notes: row.notesInput || '',
+      });
 
-    if (!employee) {
-      throw new BadRequestException('المستخدم غير موجود');
+      toast.success(`تم حفظ إسناد ${row.employeeName}`);
+      await fetchAssignments();
+      await fetchSnapshots();
+
+      if (
+        selectedSnapshot &&
+        selectedSnapshot.userId === row.userId &&
+        selectedSnapshot.periodType === periodType &&
+        selectedSnapshot.periodLabel === periodLabel
+      ) {
+        const res = await api.get(`/kpis/${row.userId}/${periodType}/${periodLabel}`);
+        setSelectedSnapshot(res.data);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'تعذر حفظ سجل الإسناد');
+    } finally {
+      setSavingAssignments((prev) => ({ ...prev, [row.userId]: false }));
     }
+  };
 
-    const { label, start, end } = this.getPeriodRange(periodType, year, value);
+  const topPerformer = evaluatedSnapshots.length ? evaluatedSnapshots[0] : null;
+  const lowPerformer = evaluatedSnapshots.length
+    ? evaluatedSnapshots[evaluatedSnapshots.length - 1]
+    : null;
 
-    const saved = await this.prisma.courseAssignmentRegister.upsert({
-      where: {
-        userId_periodType_periodLabel: {
-          userId,
-          periodType,
-          periodLabel: label,
-        },
-      },
-      update: {
-        assignedCoursesCount,
-        notes: notes?.trim() || null,
-        periodStart: start,
-        periodEnd: end,
-      },
-      create: {
-        userId,
-        periodType,
-        periodLabel: label,
-        periodStart: start,
-        periodEnd: end,
-        assignedCoursesCount,
-        notes: notes?.trim() || null,
-      },
-    });
+  const averageScore = evaluatedSnapshots.length
+    ? formatNumber(
+        evaluatedSnapshots.reduce((sum, item) => sum + Number(item.finalScore || 0), 0) /
+          evaluatedSnapshots.length,
+      )
+    : '-';
 
-    await this.audit.log(
-      managerId,
-      'MANAGER',
-      'ASSIGNMENT_REGISTER_UPDATED',
-      {
-        userId,
-        periodType,
-        periodLabel: label,
-        assignedCoursesCount,
-      },
-    );
+  const totalAssignedCourses = assignmentRows.reduce(
+    (sum, row) => sum + Number(row.assignedCoursesCount || 0),
+    0,
+  );
+  const totalActualCourses = assignmentRows.reduce(
+    (sum, row) => sum + Number(row.actualCoursesCount || 0),
+    0,
+  );
+  const totalMissingCourses = assignmentRows.reduce(
+    (sum, row) => sum + Number(row.missingCoursesCount || 0),
+    0,
+  );
 
-    return saved;
-  }
+  const committedCount = evaluatedSnapshots.filter(
+    (item) => item.commitmentStatus === 'COMMITTED',
+  ).length;
+
+  const disciplinedCount = evaluatedSnapshots.filter(
+    (item) => item.disciplineStatus === 'DISCIPLINED',
+  ).length;
+
+  const nonEvaluatedCount = snapshots.filter((item) => !item.isSubjectToEvaluation).length;
+
+  return (
+    <MainLayout>
+      <div className="space-y-6">
+        <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+              <h1 className="text-2xl font-extrabold text-primary">مؤشرات الأداء</h1>
+              <p className="mt-1 text-sm text-text-soft">
+                متابعة الإسناد، تقييم الأداء، وقراءة واضحة لحالة كل مستخدم
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="mb-1 block text-xs text-text-soft">نوع الفترة</label>
+                <select
+                  value={periodType}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setPeriodType(next);
+                    if (next === 'MONTHLY') setValue(new Date().getMonth() + 1);
+                    if (next === 'QUARTERLY') setValue(1);
+                    if (next === 'YEARLY') setValue(1);
+                  }}
+                  className={inputClass}
+                >
+                  {periodTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-text-soft">السنة</label>
+                <select
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                  className={inputClass}
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {periodType === 'MONTHLY' && (
+                <div>
+                  <label className="mb-1 block text-xs text-text-soft">الشهر</label>
+                  <select
+                    value={value}
+                    onChange={(e) => setValue(Number(e.target.value))}
+                    className={inputClass}
+                  >
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                      <option key={month} value={month}>
+                        {month}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {periodType === 'QUARTERLY' && (
+                <div>
+                  <label className="mb-1 block text-xs text-text-soft">الربع</label>
+                  <select
+                    value={value}
+                    onChange={(e) => setValue(Number(e.target.value))}
+                    className={inputClass}
+                  >
+                    {quarterOptions.map((q) => (
+                      <option key={q.value} value={q.value}>
+                        {q.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <button
+                onClick={handleCalculate}
+                disabled={loadingCalculation}
+                className="rounded-2xl bg-primary px-5 py-2.5 text-sm font-bold text-white transition hover:bg-primary-dark disabled:opacity-60"
+              >
+                {loadingCalculation ? 'جاري الاحتساب...' : 'احتساب المؤشرات'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-6">
+          <SummaryCard title="الفترة الحالية" value={periodLabel} />
+          <SummaryCard title="المستخدمون المقيمون" value={evaluatedSnapshots.length} />
+          <SummaryCard title="غير خاضعين للتقييم" value={nonEvaluatedCount} tone="gray" />
+          <SummaryCard title="إجمالي الدورات المسندة" value={totalAssignedCourses} />
+          <SummaryCard title="إجمالي الدورات الفعلية" value={totalActualCourses} />
+          <SummaryCard
+            title="فجوة التسجيل"
+            value={totalMissingCourses}
+            tone={totalMissingCourses > 0 ? 'red' : 'green'}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <div className="rounded-3xl border border-border bg-white p-5 shadow-card xl:col-span-2">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-extrabold text-primary">التحليل البصري للأداء</h2>
+              <Badge tone="gray">{periodLabel}</Badge>
+            </div>
+
+            <div className="space-y-4">
+              <HorizontalBar
+                label="متوسط الدرجة"
+                value={evaluatedSnapshots.length ? Number(averageScore) : 0}
+                colorClass="bg-primary"
+              />
+              <HorizontalBar
+                label="نسبة الالتزام العامة"
+                value={evaluatedSnapshots.length ? (committedCount / evaluatedSnapshots.length) * 100 : 0}
+                colorClass="bg-emerald-500"
+              />
+              <HorizontalBar
+                label="نسبة الانضباط العامة"
+                value={evaluatedSnapshots.length ? (disciplinedCount / evaluatedSnapshots.length) * 100 : 0}
+                colorClass="bg-cyan-500"
+              />
+              <HorizontalBar
+                label="نسبة تغطية الإسناد"
+                value={totalAssignedCourses ? (totalActualCourses / totalAssignedCourses) * 100 : 0}
+                colorClass="bg-amber-500"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
+            <h2 className="mb-4 text-lg font-extrabold text-primary">ملخص سريع</h2>
+            <div className="space-y-3">
+              <SmallMetric
+                label="الأعلى أداءً"
+                value={
+                  topPerformer
+                    ? `${topPerformer.user?.firstName || ''} ${topPerformer.user?.lastName || ''}`.trim()
+                    : '-'
+                }
+                tone="text-primary"
+              />
+              <SmallMetric
+                label="الأقل أداءً"
+                value={
+                  lowPerformer
+                    ? `${lowPerformer.user?.firstName || ''} ${lowPerformer.user?.lastName || ''}`.trim()
+                    : '-'
+                }
+                tone="text-danger"
+              />
+              <SmallMetric label="متوسط الدرجة" value={averageScore} tone="text-primary" />
+              <SmallMetric label="عدد الملتزمين" value={committedCount} tone="text-emerald-700" />
+              <SmallMetric label="عدد المنضبطين" value={disciplinedCount} tone="text-cyan-700" />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-extrabold text-primary">سجل إسناد الدورات</h2>
+              <p className="mt-1 text-sm text-text-soft">
+                إدخال سريع ومختصر، وكل مستخدم يظهر كبطاقة مستقلة بدل الجدول الطويل
+              </p>
+            </div>
+            <Badge tone="gray">{periodLabel}</Badge>
+          </div>
+
+          {loadingAssignments ? (
+            <div className="rounded-3xl border border-dashed border-border bg-background p-10 text-center text-text-soft">
+              جاري تحميل سجل الإسناد...
+            </div>
+          ) : assignmentRows.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-border bg-background p-10 text-center text-text-soft">
+              لا توجد بيانات مستخدمين لهذه الفترة
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              {assignmentRows.map((row) => (
+                <div key={row.userId} className="rounded-3xl border border-border bg-background p-4">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-base font-extrabold text-text-main">{row.employeeName}</div>
+                      <div className="mt-1 text-xs text-text-soft">{row.projectName}</div>
+                    </div>
+                    <Badge tone="gray">{row.periodLabel}</Badge>
+                  </div>
+
+                  <div className="mb-4 grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-border bg-white p-3">
+                      <div className="text-[11px] font-bold text-text-soft">الفعلي</div>
+                      <div className="mt-1 text-xl font-extrabold text-primary">
+                        {row.actualCoursesCount}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-border bg-white p-3">
+                      <div className="text-[11px] font-bold text-text-soft">المسند</div>
+                      <input
+                        type="number"
+                        min="0"
+                        value={row.assignedCoursesCountInput}
+                        onChange={(e) =>
+                          handleAssignmentInputChange(
+                            row.userId,
+                            'assignedCoursesCountInput',
+                            e.target.value,
+                          )
+                        }
+                        className="mt-1 w-full rounded-xl border border-border bg-white px-3 py-2 text-center text-base font-extrabold text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    <Badge tone={toneByCoverage(row.courseRegistrationCoverageRate)}>
+                      التغطية: {formatNumber(row.courseRegistrationCoverageRate)}%
+                    </Badge>
+
+                    {row.missingCoursesCount > 0 ? (
+                      <Badge tone="red">ناقص {row.missingCoursesCount}</Badge>
+                    ) : (
+                      <Badge tone="green">مطابق</Badge>
+                    )}
+
+                    {row.extraCoursesCount > 0 ? (
+                      <Badge tone="amber">زيادة {row.extraCoursesCount}</Badge>
+                    ) : null}
+                  </div>
+
+                  <textarea
+                    value={row.notesInput}
+                    onChange={(e) =>
+                      handleAssignmentInputChange(row.userId, 'notesInput', e.target.value)
+                    }
+                    className="mb-4 min-h-[78px] w-full rounded-2xl border border-border bg-white px-3 py-2 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+                    placeholder="ملاحظات مختصرة"
+                  />
+
+                  <button
+                    onClick={() => handleSaveAssignment(row)}
+                    disabled={!!savingAssignments[row.userId]}
+                    className="w-full rounded-2xl bg-primary px-4 py-2.5 text-sm font-bold text-white transition hover:bg-primary-dark disabled:opacity-60"
+                  >
+                    {savingAssignments[row.userId] ? 'جاري الحفظ...' : 'حفظ'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="overflow-hidden rounded-3xl border border-border bg-white shadow-card">
+          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <div>
+              <h2 className="text-lg font-extrabold text-primary">نتائج الموظفين</h2>
+              <p className="mt-1 text-sm text-text-soft">
+                عرض واضح للدرجة، الالتزام، الانضباط، والتغطية
+              </p>
+            </div>
+            <Badge tone="gray">{periodLabel}</Badge>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-background text-text-soft">
+                <tr>
+                  <th className="px-4 py-3 text-right font-bold">الموظف</th>
+                  <th className="px-4 py-3 text-right font-bold">المشروع</th>
+                  <th className="px-4 py-3 text-right font-bold">المسند</th>
+                  <th className="px-4 py-3 text-right font-bold">الفعلي</th>
+                  <th className="px-4 py-3 text-right font-bold">التغطية</th>
+                  <th className="px-4 py-3 text-right font-bold">الالتزام</th>
+                  <th className="px-4 py-3 text-right font-bold">الانضباط</th>
+                  <th className="px-4 py-3 text-right font-bold">الدرجة</th>
+                  <th className="px-4 py-3 text-right font-bold">التصنيف</th>
+                  <th className="px-4 py-3 text-right font-bold">الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingSnapshots ? (
+                  <tr>
+                    <td colSpan="10" className="px-4 py-10 text-center text-text-soft">
+                      جاري التحميل...
+                    </td>
+                  </tr>
+                ) : snapshots.length === 0 ? (
+                  <tr>
+                    <td colSpan="10" className="px-4 py-10 text-center text-text-soft">
+                      لا توجد نتائج لهذه الفترة
+                    </td>
+                  </tr>
+                ) : (
+                  snapshots.map((item) => (
+                    <tr key={item.id} className="border-t border-border hover:bg-background transition">
+                      <td className="px-4 py-3">
+                        <div className="font-bold text-text-main">
+                          {item.user?.firstName} {item.user?.lastName}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-text-main">
+                        {item.user?.operationalProject?.name || '-'}
+                      </td>
+                      <td className="px-4 py-3 font-bold text-text-main">
+                        {item.assignedCoursesCount ?? 0}
+                      </td>
+                      <td className="px-4 py-3 font-bold text-primary">
+                        {item.actualCoursesCount ?? 0}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tone={toneByCoverage(item.courseRegistrationCoverageRate)}>
+                          {formatNumber(item.courseRegistrationCoverageRate)}%
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tone={toneByCommitment(item.commitmentStatus)}>
+                          {item.commitmentStatusLabel}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tone={toneByDiscipline(item.disciplineStatus)}>
+                          {item.disciplineStatusLabel}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 font-extrabold text-primary">
+                        {item.isSubjectToEvaluation ? formatNumber(item.finalScore) : '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tone={toneByPerformance(item)}>
+                          {item.performanceLevelLabel || formatLevel(item.performanceLevel)}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => handleOpenDetails(item)}
+                          className="rounded-2xl border border-primary px-3 py-1.5 font-bold text-primary transition hover:bg-primary-light"
+                        >
+                          التفاصيل
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {selectedSnapshot && (
+          <div className="space-y-5 rounded-3xl border border-border bg-white p-5 shadow-card">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h3 className="text-2xl font-extrabold text-primary">
+                  {selectedSnapshot.user?.firstName} {selectedSnapshot.user?.lastName}
+                </h3>
+                <p className="mt-1 text-sm text-text-soft">
+                  {selectedSnapshot.user?.operationalProject?.name || '-'} — {selectedSnapshot.periodLabel}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Badge tone={toneByPerformance(selectedSnapshot)}>
+                  {selectedSnapshot.performanceLevelLabel}
+                </Badge>
+                <Badge tone={toneByCommitment(selectedSnapshot.commitmentStatus)}>
+                  {selectedSnapshot.commitmentStatusLabel}
+                </Badge>
+                <Badge tone={toneByDiscipline(selectedSnapshot.disciplineStatus)}>
+                  {selectedSnapshot.disciplineStatusLabel}
+                </Badge>
+                <Badge tone="blue">
+                  الدرجة: {selectedSnapshot.isSubjectToEvaluation ? formatNumber(selectedSnapshot.finalScore) : '-'}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <SummaryCard title="الدورات المسندة" value={selectedSnapshot.assignedCoursesCount ?? 0} />
+              <SummaryCard title="الدورات الفعلية" value={selectedSnapshot.actualCoursesCount ?? 0} />
+              <SummaryCard
+                title="الدورات غير المسجلة"
+                value={selectedSnapshot.missingCoursesCount ?? 0}
+                tone={Number(selectedSnapshot.missingCoursesCount) > 0 ? 'red' : 'green'}
+              />
+              <SummaryCard
+                title="نسبة التغطية"
+                value={`${formatNumber(selectedSnapshot.courseRegistrationCoverageRate)}%`}
+                tone={toneByCoverage(selectedSnapshot.courseRegistrationCoverageRate) === 'green' ? 'green' : toneByCoverage(selectedSnapshot.courseRegistrationCoverageRate) === 'amber' ? 'amber' : 'red'}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <div className="rounded-3xl border border-border p-4">
+                <h4 className="mb-4 text-lg font-extrabold text-primary">الإسناد والتسجيل</h4>
+                <div className="space-y-3">
+                  <SmallMetric label="عدد الدورات المسندة" value={selectedSnapshot.assignedCoursesCount ?? 0} />
+                  <SmallMetric label="عدد الدورات الفعلية" value={selectedSnapshot.actualCoursesCount ?? 0} />
+                  <SmallMetric
+                    label="الدورات غير المسجلة"
+                    value={selectedSnapshot.missingCoursesCount ?? 0}
+                    tone="text-danger"
+                  />
+                  <SmallMetric
+                    label="نسبة التغطية"
+                    value={`${formatNumber(selectedSnapshot.courseRegistrationCoverageRate)}%`}
+                    tone="text-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-border p-4">
+                <h4 className="mb-4 text-lg font-extrabold text-primary">الإنجاز</h4>
+                <div className="space-y-3">
+                  <SmallMetric label="العناصر المطلوبة" value={selectedSnapshot.requiredElementsCount} />
+                  <SmallMetric label="العناصر المقدمة" value={selectedSnapshot.submittedElementsCount} />
+                  <SmallMetric label="العناصر المكتملة" value={selectedSnapshot.completedElementsCount} />
+                  <SmallMetric
+                    label="نسبة الإنجاز"
+                    value={`${formatNumber(selectedSnapshot.closureCompletionRate)}%`}
+                    tone="text-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-border p-4">
+                <h4 className="mb-4 text-lg font-extrabold text-primary">الجودة</h4>
+                <div className="space-y-3">
+                  <SmallMetric
+                    label="اعتماد من أول مرة"
+                    value={`${formatNumber(selectedSnapshot.firstPassApprovalRate)}%`}
+                  />
+                  <SmallMetric
+                    label="معدل الإعادة"
+                    value={`${formatNumber(selectedSnapshot.returnRate)}%`}
+                  />
+                  <SmallMetric
+                    label="معدل الرفض"
+                    value={`${formatNumber(selectedSnapshot.rejectRate)}%`}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-border p-4">
+                <h4 className="mb-4 text-lg font-extrabold text-primary">السرعة والانضباط</h4>
+                <div className="space-y-3">
+                  <SmallMetric
+                    label="متوسط وقت التقديم"
+                    value={`${formatNumber(selectedSnapshot.avgElementSubmissionHours)} ساعة`}
+                  />
+                  <SmallMetric
+                    label="العناصر المتأخرة"
+                    value={`${formatNumber(selectedSnapshot.overdueElementsRate)}%`}
+                  />
+                  <SmallMetric
+                    label="العناصر المعلقة"
+                    value={`${formatNumber(selectedSnapshot.stalePendingElementsRate)}%`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-border p-4">
+              <h4 className="mb-4 text-lg font-extrabold text-primary">التحليل البصري للمستخدم</h4>
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <HorizontalBar
+                  label="التغطية"
+                  value={selectedSnapshot.courseRegistrationCoverageRate}
+                  colorClass="bg-cyan-500"
+                />
+                <HorizontalBar
+                  label="الإنجاز"
+                  value={selectedSnapshot.closureCompletionRate}
+                  colorClass="bg-primary"
+                />
+                <HorizontalBar
+                  label="اعتماد من أول مرة"
+                  value={selectedSnapshot.firstPassApprovalRate}
+                  colorClass="bg-emerald-500"
+                />
+                <HorizontalBar
+                  label="معدل الانضباط"
+                  value={100 - Number(selectedSnapshot.overdueElementsRate || 0)}
+                  colorClass="bg-amber-500"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-3xl border border-border p-4">
+              <h4 className="font-extrabold text-text-main">ملاحظات المدير</h4>
+
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="min-h-[110px] w-full rounded-2xl border border-border p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+                placeholder="اكتب ملاحظة مهنية عن أداء المستخدم خلال هذه الفترة"
+              />
+
+              <div className="flex justify-end">
+                <button
+                  onClick={handleSaveNote}
+                  disabled={savingNote}
+                  className="rounded-2xl bg-primary px-5 py-2.5 font-bold text-white transition hover:bg-primary-dark disabled:opacity-60"
+                >
+                  {savingNote ? 'جاري الحفظ...' : 'حفظ الملاحظة'}
+                </button>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                {selectedSnapshot.notes?.length ? (
+                  selectedSnapshot.notes.map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-border bg-background p-3">
+                      <div className="text-sm text-text-main">{item.note}</div>
+                      <div className="mt-2 text-[11px] text-text-soft">
+                        {item.manager?.firstName} {item.manager?.lastName} —{' '}
+                        {new Date(item.createdAt).toLocaleString('ar-SA')}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-text-soft">لا توجد ملاحظات حتى الآن</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </MainLayout>
+  );
 }
