@@ -1,26 +1,15 @@
-import {
-  IsString,
-  IsDateString,
-  IsInt,
-  IsBoolean,
-  IsOptional,
-  IsArray,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateCourseDto {
   @IsString()
-  name: string;
+  title: string;
 
-  @IsOptional()
   @IsString()
-  code?: string;
+  @IsIn(['INTERNAL', 'EXTERNAL', 'REMOTE'])
+  locationType: string;
 
   @IsString()
   city: string;
-
-  @IsString()
-  locationType: string;
 
   @IsDateString()
   startDate: string;
@@ -28,39 +17,27 @@ export class CreateCourseDto {
   @IsDateString()
   endDate: string;
 
-  @Type(() => Number)
   @IsInt()
-  numTrainees: number;
-
-  @IsString()
-  operationalProjectId: string;
-
-  @IsString()
-  primaryEmployeeId: string;
+  @Min(1)
+  traineesCount: number;
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  supportingEmployeeIds?: string[];
-
-  @IsString()
-  courseType: string;
-
   @IsBoolean()
-  requiresAdvance: boolean;
+  requiresAdvance?: boolean;
 
+  @IsOptional()
   @IsBoolean()
-  requiresRevenue: boolean;
+  requiresAdvanceSettlement?: boolean;
 
+  @IsOptional()
   @IsBoolean()
-  materialsIssued: boolean;
+  requiresMaterialReturn?: boolean;
 
+  @IsOptional()
   @IsBoolean()
-  requiresAdvanceSettlement: boolean;
+  requiresCoordinatorCompensation?: boolean;
 
+  @IsOptional()
   @IsBoolean()
-  requiresSupervisorCompensation: boolean;
-
-  @IsBoolean()
-  requiresTrainerCompensation: boolean;
+  requiresTrainerCompensation?: boolean;
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import MainLayout from '../../components/layout/MainLayout';
 import useAuth from '../../context/AuthContext';
@@ -30,7 +30,38 @@ export default function CreateCoursePage() {
   const { user, loading } = useAuth();
 
   const [form, setForm] = useState(initialForm);
+  const [projects, setProjects] = useState([]);
+  const [selectedOperationalProjectId, setSelectedOperationalProjectId] = useState('');
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const loadProjects = async () => {
+      try {
+        setIsLoadingProjects(true);
+        const res = await api.get('/projects');
+
+        const items = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.data)
+          ? res.data.data
+          : [];
+
+        setProjects(items);
+
+        if (items.length > 0) {
+          setSelectedOperationalProjectId(items[0].id);
+        }
+      } catch (error) {
+        console.error('Failed to load projects: - create.js:56', error);
+        toast.error('تعذر تحميل المشاريع التشغيلية');
+      } finally {
+        setIsLoadingProjects(false);
+      }
+    };
+
+    loadProjects();
+  }, []);
 
   const canSubmit = useMemo(() => {
     return (
@@ -40,9 +71,11 @@ export default function CreateCoursePage() {
       form.startDate &&
       form.endDate &&
       form.traineesCount &&
-      Number(form.traineesCount) > 0
+      Number(form.traineesCount) > 0 &&
+      selectedOperationalProjectId &&
+      user?.id
     );
-  }, [form]);
+  }, [form, selectedOperationalProjectId, user]);
 
   const handleChange = (key, value) => {
     setForm((prev) => ({
@@ -53,17 +86,26 @@ export default function CreateCoursePage() {
 
   const normalizePayload = () => {
     return {
-      title: form.title.trim(),
-      locationType: form.locationType,
+      // السيرفر الحالي ما زال يتوقع هذه الأسماء
+      name: form.title.trim(),
       city: form.city.trim(),
+      locationType: form.locationType,
       startDate: form.startDate,
       endDate: form.endDate,
-      traineesCount: Number(form.traineesCount),
+      numTrainees: Number(form.traineesCount),
+
+      operationalProjectId: selectedOperationalProjectId,
+      primaryEmployeeId: user?.id,
+      supportingEmployeeIds: [],
+
+      // لأن السيرفر الحالي ما زال يشترط courseType
+      courseType: form.locationType,
 
       requiresAdvance: form.requiresAdvance,
+      requiresRevenue: false,
+      materialsIssued: form.requiresMaterialReturn,
       requiresAdvanceSettlement: form.requiresAdvanceSettlement,
-      requiresMaterialReturn: form.requiresMaterialReturn,
-      requiresCoordinatorCompensation: form.requiresCoordinatorCompensation,
+      requiresSupervisorCompensation: form.requiresCoordinatorCompensation,
       requiresTrainerCompensation: form.requiresTrainerCompensation,
     };
   };
@@ -100,7 +142,7 @@ export default function CreateCoursePage() {
 
       router.push('/courses');
     } catch (error) {
-      console.error('Create course failed: - create.js:103', error);
+      console.error('Create course failed: - create.js:145', error);
       toast.error(error?.response?.data?.message || 'تعذر إنشاء الدورة');
     } finally {
       setIsSubmitting(false);
@@ -124,7 +166,7 @@ export default function CreateCoursePage() {
           <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h1 className="text-2xl font-bold text-slate-900">إنشاء دورة جديدة</h1>
             <p className="mt-1 text-sm text-slate-500">
-              نموذج مبسط وسريع وسهل التعبئة
+              نموذج مبسط وسهل التعبئة
             </p>
           </div>
 
@@ -178,6 +220,10 @@ export default function CreateCoursePage() {
                   className="md:col-span-2"
                 />
               </div>
+
+              {isLoadingProjects ? (
+                <p className="mt-4 text-sm text-slate-500">جاري تجهيز المشروع التشغيلي تلقائيًا...</p>
+              ) : null}
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
