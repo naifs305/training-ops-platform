@@ -69,20 +69,20 @@ export class CoursesService {
     const data = allElements.map((el) => {
       let status: ElementStatus = 'NOT_STARTED';
 
-      if (el.key === 'advance_req') {
-        if (!course.requiresAdvance) status = 'NOT_APPLICABLE';
+      if (el.key === 'advance_req' && !course.requiresAdvance) {
+        status = 'NOT_APPLICABLE';
       }
 
-      if (el.key === 'settlement') {
-        if (!course.requiresAdvanceSettlement) status = 'NOT_APPLICABLE';
+      if (el.key === 'settlement' && !course.requiresAdvanceSettlement) {
+        status = 'NOT_APPLICABLE';
       }
 
-      if (el.key === 'revenues') {
-        if (!course.requiresRevenue) status = 'NOT_APPLICABLE';
+      if (el.key === 'revenues' && !course.requiresRevenue) {
+        status = 'NOT_APPLICABLE';
       }
 
-      if (el.key === 'materials') {
-        if (!course.materialsIssued) status = 'NOT_APPLICABLE';
+      if (el.key === 'materials' && !course.materialsIssued) {
+        status = 'NOT_APPLICABLE';
       }
 
       return {
@@ -357,9 +357,7 @@ export class CoursesService {
 
   async deleteCourse(id: string, userId: string, role: string) {
     const course = await this.prisma.course.findFirst({
-      where: {
-        id,
-      },
+      where: { id },
       include: {
         closureElements: true,
         supportingTeam: true,
@@ -380,6 +378,14 @@ export class CoursesService {
       }
     }
 
+    await this.audit.log(
+      userId,
+      role,
+      'COURSE_DELETED',
+      { courseName: course.name },
+      id,
+    );
+
     await this.prisma.$transaction([
       this.prisma.courseSupport.deleteMany({
         where: { courseId: id },
@@ -394,14 +400,6 @@ export class CoursesService {
         where: { id },
       }),
     ]);
-
-    await this.audit.log(
-      userId,
-      role,
-      'COURSE_DELETED',
-      { courseName: course.name },
-      id,
-    );
 
     return { success: true, message: 'تم حذف الدورة بنجاح' };
   }
