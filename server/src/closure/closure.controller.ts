@@ -51,6 +51,17 @@ export class ClosureController {
     return map[value] || '-';
   }
 
+  private getRatingClass(value?: string) {
+    const map = {
+      excellent: 'badge excellent',
+      good: 'badge good',
+      needs_improvement: 'badge improve',
+      weak: 'badge weak',
+      requires_development: 'badge develop',
+    };
+    return map[value || ''] || 'badge';
+  }
+
   private formatDate(value?: string | Date | null) {
     if (!value) return '-';
     return new Date(value).toLocaleDateString('ar-SA');
@@ -97,7 +108,7 @@ export class ClosureController {
 
     if (typeof value === 'string') {
       return value
-        .split(/\n|•|-|—|–|\d+\./g)
+        .split(/\n|•|●|▪|◦|\d+\.\s*/g)
         .map((item) => item.trim())
         .filter(Boolean);
     }
@@ -112,9 +123,7 @@ export class ClosureController {
 
     return `
       <ul class="list">
-        ${items
-          .map((item) => `<li>${this.escapeHtml(item)}</li>`)
-          .join('')}
+        ${items.map((item) => `<li>${this.escapeHtml(item)}</li>`).join('')}
       </ul>
     `;
   }
@@ -220,34 +229,51 @@ export class ClosureController {
     const trainersCount = data.trainers_count ?? '-';
     const translatorsCount = data.translators_count ?? '-';
 
-    const trainingEnvironmentRating =
-      this.getRatingLabel(data.training_environment?.rating) || '-';
-
-    const venueEvaluation =
-      data.venue_evaluation ||
-      this.getRatingLabel(data.program_evaluation?.rating) ||
-      '-';
-
-    const logisticsSupplies = Array.isArray(data.logistics_items)
-      ? data.logistics_items.join(' - ')
-      : data.logistics_items || data.logistics_support || '-';
-
-    const positives = this.toListItems(data.positives || data.strengths || data.highlights);
-    const negatives = this.toListItems(data.negatives || data.challenges || data.issues);
     const recommendations = this.toListItems(
       data.recommendations || data.suggestions || data.proposals,
     );
+
+    const evaluationSections = [
+      {
+        title: 'تقييم البيئة التدريبية',
+        rating: data.training_environment?.rating,
+        comment: data.training_environment?.comment,
+      },
+      {
+        title: 'تقييم المدرب والتزامه وانضباطه',
+        rating: data.trainer_evaluation?.rating,
+        comment: data.trainer_evaluation?.comment,
+      },
+      {
+        title: 'تقييم المادة العلمية واكتمالها على منصة LMS',
+        rating: data.lms_content_evaluation?.rating,
+        comment: data.lms_content_evaluation?.comment,
+      },
+      {
+        title: 'تقييم المتدربين وانضباطهم والتزامهم',
+        rating: data.trainee_evaluation?.rating,
+        comment: data.trainee_evaluation?.comment,
+      },
+      {
+        title: 'التقييم العام للبرنامج',
+        rating: data.program_evaluation?.rating,
+        comment: data.program_evaluation?.comment,
+      },
+    ];
 
     const html = `
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>تقرير افتتاح دورة تدريبية</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
+
     @page {
       size: A4;
-      margin: 18mm;
+      margin: 14mm;
     }
 
     * {
@@ -256,10 +282,10 @@ export class ClosureController {
 
     body {
       margin: 0;
-      font-family: "Cairo", Tahoma, Arial, sans-serif;
+      font-family: 'Cairo', Tahoma, Arial, sans-serif;
       background: #eef3f2;
       color: #1f2937;
-      line-height: 1.9;
+      line-height: 1.65;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -269,17 +295,17 @@ export class ClosureController {
       max-width: 210mm;
       margin: 0 auto;
       background: #ffffff;
-      padding: 22px 26px 28px;
+      padding: 16px 18px 20px;
     }
 
     .header {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
       gap: 16px;
       border-bottom: 3px solid #016564;
-      padding-bottom: 14px;
-      margin-bottom: 20px;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
     }
 
     .brand-text {
@@ -289,130 +315,215 @@ export class ClosureController {
     .brand-title {
       margin: 0;
       color: #016564;
-      font-size: 28px;
+      font-size: 24px;
       font-weight: 800;
-      line-height: 1.3;
+      line-height: 1.2;
     }
 
     .brand-subtitle {
-      margin: 8px 0 0;
+      margin: 4px 0 0;
       color: #6b7280;
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 11px;
+      font-weight: 700;
     }
 
     .logo {
-      width: 180px;
+      width: 150px;
       height: auto;
       object-fit: contain;
     }
 
     .title-box {
-      margin: 18px 0 16px;
-      padding: 14px 18px;
+      margin: 10px 0 12px;
+      padding: 12px 14px;
       background: linear-gradient(135deg, #016564 0%, #498983 100%);
       color: #ffffff;
-      border-radius: 16px;
+      border-radius: 14px;
     }
 
     .title-box h2 {
       margin: 0;
-      font-size: 22px;
+      font-size: 20px;
       font-weight: 800;
+      line-height: 1.35;
     }
 
     .title-box p {
-      margin: 6px 0 0;
-      font-size: 13px;
-      opacity: 0.95;
+      margin: 4px 0 0;
+      font-size: 11px;
+      opacity: 0.96;
     }
 
     .letter {
-      margin: 18px 0 8px;
-      font-size: 15px;
-      color: #1f2937;
+      margin: 8px 0 4px;
+      font-size: 13px;
+    }
+
+    .paragraph {
+      margin: 0 0 6px;
     }
 
     .section {
-      margin-top: 18px;
+      margin-top: 12px;
       border: 1px solid #d6e2e0;
-      border-radius: 18px;
+      border-radius: 16px;
       overflow: hidden;
+      page-break-inside: avoid;
     }
 
     .section-header {
       background: #f3f8f7;
       color: #016564;
-      font-size: 17px;
+      font-size: 15px;
       font-weight: 800;
-      padding: 12px 16px;
+      padding: 10px 14px;
       border-bottom: 1px solid #dce7e5;
     }
 
     .section-body {
-      padding: 14px 16px 16px;
+      padding: 12px 14px;
     }
 
-    .grid {
+    .info-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
     }
 
-    .stat-grid {
+    .stats-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
     }
 
     .card {
       background: #fafcfb;
       border: 1px solid #e5ecea;
-      border-radius: 14px;
-      padding: 12px 14px;
-      min-height: 82px;
+      border-radius: 12px;
+      padding: 10px 12px;
+      min-height: 68px;
     }
 
     .label {
       color: #6b7280;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
 
     .value {
       color: #111827;
-      font-size: 15px;
+      font-size: 13px;
       font-weight: 800;
       word-break: break-word;
+      line-height: 1.5;
     }
 
     .stat-card {
       background: #ffffff;
       border: 1px solid #dce7e5;
       border-top: 4px solid #016564;
-      border-radius: 16px;
-      padding: 12px;
+      border-radius: 14px;
+      padding: 10px;
       text-align: center;
+      min-height: 82px;
     }
 
     .stat-number {
       color: #016564;
-      font-size: 24px;
+      font-size: 20px;
       font-weight: 900;
-      line-height: 1.2;
+      line-height: 1.1;
     }
 
     .stat-label {
-      margin-top: 6px;
+      margin-top: 5px;
       color: #6b7280;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
+      line-height: 1.4;
     }
 
-    .paragraph {
-      margin: 0;
-      font-size: 14px;
+    .evaluations-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .evaluation-card {
+      border: 1px solid #e5ecea;
+      border-radius: 14px;
+      padding: 12px;
+      background: #fcfdfd;
+      page-break-inside: avoid;
+    }
+
+    .evaluation-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .evaluation-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #111827;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      border: 1px solid #d1d5db;
+      background: #f8fafc;
+      color: #334155;
+      white-space: nowrap;
+    }
+
+    .badge.excellent {
+      background: #ecfdf5;
+      color: #047857;
+      border-color: #a7f3d0;
+    }
+
+    .badge.good {
+      background: #ecfeff;
+      color: #0f766e;
+      border-color: #99f6e4;
+    }
+
+    .badge.improve {
+      background: #fffbeb;
+      color: #b45309;
+      border-color: #fde68a;
+    }
+
+    .badge.weak {
+      background: #fef2f2;
+      color: #b91c1c;
+      border-color: #fecaca;
+    }
+
+    .badge.develop {
+      background: #fdf8f1;
+      color: #8c6b2a;
+      border-color: #ead8b6;
+    }
+
+    .note-box {
+      border-right: 4px solid #d0b284;
+      background: #fcfaf6;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
     }
 
     .list {
@@ -421,39 +532,39 @@ export class ClosureController {
     }
 
     .list li {
-      margin-bottom: 8px;
-      font-size: 14px;
+      margin-bottom: 6px;
+      font-size: 13px;
       font-weight: 600;
     }
 
     .empty {
       color: #6b7280;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
     }
 
     .footer-note {
-      margin-top: 22px;
-      padding: 14px 16px;
+      margin-top: 14px;
+      padding: 12px 14px;
       background: #f8faf9;
       border-right: 4px solid #d0b284;
       border-radius: 12px;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
     }
 
     .closing {
-      margin-top: 18px;
-      font-size: 15px;
+      margin-top: 12px;
+      font-size: 14px;
     }
 
     .signature {
-      margin-top: 28px;
-      padding-top: 14px;
+      margin-top: 18px;
+      padding-top: 10px;
       border-top: 1px dashed #cfd8d6;
       color: #016564;
       font-weight: 800;
-      font-size: 15px;
+      font-size: 14px;
     }
 
     @media print {
@@ -491,29 +602,32 @@ export class ClosureController {
       <p class="paragraph">السلام عليكم ورحمة الله وبركاته،</p>
       <p class="paragraph">تحية طيبة وبعد،،</p>
       <p class="paragraph">
-        نفيد سعادتكم بأنه تم – بفضل الله – افتتاح الدورة التدريبية الخارجية:
+        نفيد سعادتكم بأنه تم – بفضل الله – افتتاح الدورة التدريبية:
         "<strong>${this.escapeHtml(courseName)}</strong>"،
         والمنعقدة في مدينة <strong>${this.escapeHtml(city)}</strong>،
-        وذلك ضمن الخطة التنفيذية المعتمدة للبرامج الخارجية لهذا العام.
+        وذلك ضمن الخطة التنفيذية المعتمدة للبرامج التدريبية.
       </p>
       <p class="paragraph">
         وقد باشر فريق إدارة عمليات التدريب الإشراف الميداني على انطلاق البرنامج،
-        وتم التحقق من جاهزية القاعة التدريبية، وسلامة الترتيبات التنظيمية،
-        واستقبال المشاركين بما يليق بمكانة الجامعة ورسالتها التدريبية.
+        وتم التحقق من الجاهزية التشغيلية والتنظيمية، واستقبال المشاركين بما يليق بمكانة الجامعة ورسالتها التدريبية.
       </p>
     </div>
 
     <div class="section">
       <div class="section-header">المعلومات الأساسية للدورة</div>
       <div class="section-body">
-        <div class="grid">
+        <div class="info-grid">
           <div class="card">
-            <div class="label">اسم الدورة التدريبية</div>
+            <div class="label">اسم الدورة</div>
             <div class="value">${this.escapeHtml(courseName)}</div>
           </div>
           <div class="card">
             <div class="label">المشروع التشغيلي</div>
             <div class="value">${this.escapeHtml(projectName)}</div>
+          </div>
+          <div class="card">
+            <div class="label">المشرف الميداني</div>
+            <div class="value">${this.escapeHtml(supervisor)}</div>
           </div>
           <div class="card">
             <div class="label">مكان الانعقاد</div>
@@ -532,12 +646,12 @@ export class ClosureController {
             <div class="value">${this.escapeHtml(duration)}</div>
           </div>
           <div class="card">
-            <div class="label">المشرف الميداني</div>
-            <div class="value">${this.escapeHtml(supervisor)}</div>
-          </div>
-          <div class="card">
             <div class="label">تاريخ رفع التقرير</div>
             <div class="value">${this.escapeHtml(this.formatDateTime(element.executionAt))}</div>
+          </div>
+          <div class="card">
+            <div class="label">عدد المتدربين المسجلين بالنظام</div>
+            <div class="value">${this.escapeHtml(info.traineesCount || course.numTrainees || '-')}</div>
           </div>
         </div>
       </div>
@@ -546,7 +660,7 @@ export class ClosureController {
     <div class="section">
       <div class="section-header">إحصائيات المشاركة</div>
       <div class="section-body">
-        <div class="stat-grid">
+        <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-number">${this.escapeHtml(registeredCount)}</div>
             <div class="stat-label">عدد المشاركين المسجلين</div>
@@ -563,58 +677,36 @@ export class ClosureController {
             <div class="stat-number">${this.escapeHtml(trainersCount)}</div>
             <div class="stat-label">عدد المدربين</div>
           </div>
-        </div>
-        <div style="height:12px"></div>
-        <div class="grid">
-          <div class="card">
-            <div class="label">عدد المترجمين</div>
-            <div class="value">${this.escapeHtml(translatorsCount)}</div>
-          </div>
-          <div class="card">
-            <div class="label">تعليق مختصر</div>
-            <div class="value">
-              ${
-                attendanceRate !== '-'
-                  ? `نسبة حضور ${this.escapeHtml(attendanceRate)} تعكس مستوى الالتزام وجودة التنسيق المسبق`
-                  : 'لا توجد بيانات كافية لإصدار تعليق على نسبة الحضور'
-              }
-            </div>
+          <div class="stat-card">
+            <div class="stat-number">${this.escapeHtml(translatorsCount)}</div>
+            <div class="stat-label">عدد المترجمين</div>
           </div>
         </div>
       </div>
     </div>
 
     <div class="section">
-      <div class="section-header">تقييم المرافق والخدمات</div>
+      <div class="section-header">محاور التقييم المعتمدة</div>
       <div class="section-body">
-        <div class="grid">
-          <div class="card">
-            <div class="label">البيئة التدريبية</div>
-            <div class="value">${this.escapeHtml(trainingEnvironmentRating)}</div>
-          </div>
-          <div class="card">
-            <div class="label">تقييم مقر التدريب</div>
-            <div class="value">${this.escapeHtml(venueEvaluation)}</div>
-          </div>
-          <div class="card" style="grid-column: 1 / -1;">
-            <div class="label">التجهيزات اللوجستية</div>
-            <div class="value">${this.escapeHtml(logisticsSupplies)}</div>
-          </div>
+        <div class="evaluations-grid">
+          ${evaluationSections
+            .map(
+              (section) => `
+                <div class="evaluation-card">
+                  <div class="evaluation-head">
+                    <div class="evaluation-title">${this.escapeHtml(section.title)}</div>
+                    <span class="${this.getRatingClass(section.rating)}">${this.escapeHtml(
+                      this.getRatingLabel(section.rating),
+                    )}</span>
+                  </div>
+                  <div class="note-box">
+                    ${this.escapeHtml(section.comment || 'لا توجد ملاحظات مسجلة في هذا المحور')}
+                  </div>
+                </div>
+              `,
+            )
+            .join('')}
         </div>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-header">الإيجابيات والملاحظات المميزة</div>
-      <div class="section-body">
-        ${this.renderList(positives, 'لا توجد إيجابيات مسجلة')}
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-header">السلبيات والتحديات</div>
-      <div class="section-body">
-        ${this.renderList(negatives, 'لا توجد سلبيات أو تحديات مسجلة')}
       </div>
     </div>
 
@@ -627,9 +719,8 @@ export class ClosureController {
 
     <div class="footer-note">
       نؤكد لسعادتكم استمرار المتابعة الميدانية اليومية حتى ختام البرنامج،
-      والرفع بأي مستجدات أو ملاحظات تنفيذية أولًا بأول.
-      كما نؤكد التزامنا بتطبيق أعلى معايير الجودة في الإشراف والمتابعة
-      لضمان تحقيق الأهداف التدريبية المرجوة.
+      والرفع بأي مستجدات أو ملاحظات تنفيذية أولًا بأول،
+      مع الالتزام بتطبيق أعلى معايير الجودة في الإشراف والمتابعة لضمان تحقيق الأهداف التدريبية المرجوة.
     </div>
 
     <div class="closing">
