@@ -64,6 +64,48 @@ function ArchiveIcon() {
   );
 }
 
+function GridIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+
+function ListIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="8" y1="6" x2="21" y2="6" />
+      <line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" />
+      <line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" />
+      <line x1="3" y1="18" x2="3.01" y2="18" />
+    </svg>
+  );
+}
+
 export default function Courses() {
   const router = useRouter();
   const { activeRole } = useAuth();
@@ -74,6 +116,7 @@ export default function Courses() {
   const [filters, setFilters] = useState({ status: '' });
   const [reassignSelections, setReassignSelections] = useState({});
   const [actionLoadingId, setActionLoadingId] = useState(null);
+  const [viewMode, setViewMode] = useState('grid');
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -266,6 +309,77 @@ export default function Courses() {
     return map[value] || value || 'غير محدد';
   };
 
+  const renderCourseActions = (course, compact = false) => (
+    <>
+      {(canEditCourse(course) || canDeleteCourse(course)) && (
+        <div className={`flex items-center gap-2 ${compact ? '' : 'mb-3'}`}>
+          {canEditCourse(course) && (
+            <button
+              onClick={() => handleEdit(course.id)}
+              disabled={actionLoadingId === course.id}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-border bg-white text-primary transition hover:border-primary hover:bg-primary-light disabled:opacity-50"
+              title="تعديل الدورة"
+            >
+              <EditIcon />
+            </button>
+          )}
+
+          {canDeleteCourse(course) && (
+            <button
+              onClick={() => handleDelete(course.id)}
+              disabled={actionLoadingId === course.id}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-danger/20 bg-white text-danger transition hover:bg-red-50 disabled:opacity-50"
+              title="حذف الدورة"
+            >
+              <DeleteIcon />
+            </button>
+          )}
+        </div>
+      )}
+
+      {activeRole === 'MANAGER' && (
+        <div className="space-y-3">
+          <select
+            className="w-full rounded-2xl border border-border bg-white p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+            value={reassignSelections[course.id] || ''}
+            onChange={(e) =>
+              setReassignSelections((prev) => ({
+                ...prev,
+                [course.id]: e.target.value,
+              }))
+            }
+          >
+            <option value="">اختر موظفًا لنقل الدورة</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.firstName} {u.lastName}
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => handleReassign(course.id)}
+            disabled={actionLoadingId === course.id}
+            className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-50"
+          >
+            نقل الدورة
+          </button>
+
+          {course.status === 'CLOSED' && (
+            <button
+              onClick={() => handleArchive(course.id)}
+              disabled={actionLoadingId === course.id}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-bold text-text-main transition hover:border-primary hover:bg-primary-light hover:text-primary disabled:opacity-50"
+            >
+              <ArchiveIcon />
+              <span>نقل إلى الأرشيف</span>
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -298,25 +412,59 @@ export default function Courses() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 rounded-3xl border border-border bg-white p-4 shadow-card md:grid-cols-4">
-          <select
-            className="w-full rounded-2xl border border-border bg-white p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
-            value={filters.status}
-            onChange={(e) => setFilters({ status: e.target.value })}
-          >
-            <option value="">كل الحالات</option>
-            <option value="PREPARATION">قيد الإعداد</option>
-            <option value="EXECUTION">قيد التنفيذ</option>
-            <option value="AWAITING_CLOSURE">بانتظار الإغلاق</option>
-            <option value="CLOSED">مغلقة</option>
-          </select>
+        <div className="rounded-3xl border border-border bg-white p-4 shadow-card">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+            <select
+              className="w-full rounded-2xl border border-border bg-white p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+              value={filters.status}
+              onChange={(e) => setFilters({ status: e.target.value })}
+            >
+              <option value="">كل الحالات</option>
+              <option value="PREPARATION">قيد الإعداد</option>
+              <option value="EXECUTION">قيد التنفيذ</option>
+              <option value="AWAITING_CLOSURE">بانتظار الإغلاق</option>
+              <option value="CLOSED">مغلقة</option>
+            </select>
+
+            <div className="md:col-span-2" />
+
+            <div className="md:col-span-2 flex items-center justify-start md:justify-end">
+              <div className="inline-flex rounded-2xl border border-border bg-background p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('grid')}
+                  className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-bold transition ${
+                    viewMode === 'grid'
+                      ? 'bg-primary text-white shadow-soft'
+                      : 'text-text-main hover:bg-white'
+                  }`}
+                >
+                  <GridIcon />
+                  <span>بطاقات</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewMode('table')}
+                  className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-bold transition ${
+                    viewMode === 'table'
+                      ? 'bg-primary text-white shadow-soft'
+                      : 'text-text-main hover:bg-white'
+                  }`}
+                >
+                  <ListIcon />
+                  <span>جدول</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         {loading ? (
           <div className="rounded-3xl border border-border bg-white p-8 text-center text-sm font-medium text-text-soft shadow-card">
             جاري التحميل...
           </div>
-        ) : (
+        ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
             {courses.map((course) => (
               <div
@@ -360,76 +508,104 @@ export default function Courses() {
                   </div>
                 </Link>
 
-                <div className="mt-auto px-6 pb-6">
-                  {(canEditCourse(course) || canDeleteCourse(course)) && (
-                    <div className="mb-3 flex items-center gap-2">
-                      {canEditCourse(course) && (
-                        <button
-                          onClick={() => handleEdit(course.id)}
-                          disabled={actionLoadingId === course.id}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-border bg-white text-primary transition hover:border-primary hover:bg-primary-light disabled:opacity-50"
-                          title="تعديل الدورة"
-                        >
-                          <EditIcon />
-                        </button>
-                      )}
-
-                      {canDeleteCourse(course) && (
-                        <button
-                          onClick={() => handleDelete(course.id)}
-                          disabled={actionLoadingId === course.id}
-                          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-danger/20 bg-white text-danger transition hover:bg-red-50 disabled:opacity-50"
-                          title="حذف الدورة"
-                        >
-                          <DeleteIcon />
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {activeRole === 'MANAGER' && (
-                    <div className="space-y-3">
-                      <select
-                        className="w-full rounded-2xl border border-border bg-white p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
-                        value={reassignSelections[course.id] || ''}
-                        onChange={(e) =>
-                          setReassignSelections((prev) => ({
-                            ...prev,
-                            [course.id]: e.target.value,
-                          }))
-                        }
-                      >
-                        <option value="">اختر موظفًا لنقل الدورة</option>
-                        {users.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.firstName} {u.lastName}
-                          </option>
-                        ))}
-                      </select>
-
-                      <button
-                        onClick={() => handleReassign(course.id)}
-                        disabled={actionLoadingId === course.id}
-                        className="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-50"
-                      >
-                        نقل الدورة
-                      </button>
-
-                      {course.status === 'CLOSED' && (
-                        <button
-                          onClick={() => handleArchive(course.id)}
-                          disabled={actionLoadingId === course.id}
-                          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-bold text-text-main transition hover:border-primary hover:bg-primary-light hover:text-primary disabled:opacity-50"
-                        >
-                          <ArchiveIcon />
-                          <span>نقل إلى الأرشيف</span>
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
+                <div className="mt-auto px-6 pb-6">{renderCourseActions(course)}</div>
               </div>
             ))}
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-3xl border border-border bg-white shadow-card">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-background">
+                  <tr className="text-right text-text-soft">
+                    <th className="px-4 py-3 font-bold">اسم الدورة</th>
+                    <th className="px-4 py-3 font-bold">الحالة</th>
+                    <th className="px-4 py-3 font-bold">المدينة</th>
+                    <th className="px-4 py-3 font-bold">مقر التنفيذ</th>
+                    <th className="px-4 py-3 font-bold">المسؤول</th>
+                    <th className="px-4 py-3 font-bold">تاريخ البداية</th>
+                    <th className="px-4 py-3 font-bold">الإجراءات</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {courses.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="px-4 py-8 text-center text-text-soft">
+                        لا توجد دورات
+                      </td>
+                    </tr>
+                  ) : (
+                    courses.map((course) => (
+                      <tr
+                        key={course.id}
+                        className="border-t border-border transition hover:bg-background"
+                      >
+                        <td className="px-4 py-4">
+                          <Link href={`/courses/${course.id}`}>
+                            <span className="cursor-pointer font-bold text-text-main hover:text-primary">
+                              {course.name || '-'}
+                            </span>
+                          </Link>
+                        </td>
+
+                        <td className="px-4 py-4">
+                          <span
+                            className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-bold ${getStatusClass(course.status)}`}
+                          >
+                            {getStatusLabel(course.status)}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-4 text-text-soft">{course.city || '-'}</td>
+                        <td className="px-4 py-4 text-text-soft">
+                          {formatLocationType(course.locationType)}
+                        </td>
+                        <td className="px-4 py-4 text-text-soft">
+                          {`${course.primaryEmployee?.firstName || ''} ${course.primaryEmployee?.lastName || ''}`.trim() || '-'}
+                        </td>
+                        <td className="px-4 py-4 text-text-soft">{formatDate(course.startDate)}</td>
+                        <td className="px-4 py-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {canEditCourse(course) && (
+                              <button
+                                onClick={() => handleEdit(course.id)}
+                                disabled={actionLoadingId === course.id}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-border bg-white text-primary transition hover:border-primary hover:bg-primary-light disabled:opacity-50"
+                                title="تعديل الدورة"
+                              >
+                                <EditIcon />
+                              </button>
+                            )}
+
+                            {canDeleteCourse(course) && (
+                              <button
+                                onClick={() => handleDelete(course.id)}
+                                disabled={actionLoadingId === course.id}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-danger/20 bg-white text-danger transition hover:bg-red-50 disabled:opacity-50"
+                                title="حذف الدورة"
+                              >
+                                <DeleteIcon />
+                              </button>
+                            )}
+
+                            {activeRole === 'MANAGER' && course.status === 'CLOSED' && (
+                              <button
+                                onClick={() => handleArchive(course.id)}
+                                disabled={actionLoadingId === course.id}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-border bg-white text-text-main transition hover:border-primary hover:bg-primary-light hover:text-primary disabled:opacity-50"
+                                title="نقل إلى الأرشيف"
+                              >
+                                <ArchiveIcon />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
