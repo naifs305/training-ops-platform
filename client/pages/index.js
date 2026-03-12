@@ -18,6 +18,11 @@ export default function Home() {
   const [stats, setStats] = useState(null);
   const [kpiRows, setKpiRows] = useState([]);
   const [kpiLoading, setKpiLoading] = useState(false);
+  const [employeeCourseStats, setEmployeeCourseStats] = useState({
+    total: 0,
+    open: 0,
+    closed: 0,
+  });
 
   useEffect(() => {
     if (!loading && !user) {
@@ -54,6 +59,32 @@ export default function Home() {
       .finally(() => setKpiLoading(false));
   }, [activeRole]);
 
+  useEffect(() => {
+    if (activeRole !== 'EMPLOYEE') return;
+
+    api
+      .get('/courses')
+      .then((res) => {
+        const rows = Array.isArray(res.data) ? res.data : [];
+        const closedStatuses = ['CLOSED', 'ARCHIVED'];
+        const closed = rows.filter((course) => closedStatuses.includes(course.status)).length;
+        const open = rows.length - closed;
+
+        setEmployeeCourseStats({
+          total: rows.length,
+          open,
+          closed,
+        });
+      })
+      .catch(() =>
+        setEmployeeCourseStats({
+          total: 0,
+          open: 0,
+          closed: 0,
+        }),
+      );
+  }, [activeRole]);
+
   if (loading) {
     return <div className="p-10 font-cairo text-text-main">جاري التحميل...</div>;
   }
@@ -85,8 +116,18 @@ export default function Home() {
               </p>
             </div>
 
-            <div className="inline-flex w-fit items-center rounded-2xl border border-primary/20 bg-primary-light px-4 py-2 text-sm font-bold text-primary">
-              {activeRole === 'MANAGER' ? 'لوحة المدير' : 'لوحة الموظف'}
+            <div className="flex flex-wrap items-center gap-3">
+              {activeRole === 'EMPLOYEE' && (
+                <Link href="/courses/create">
+                  <button className="rounded-2xl bg-primary px-5 py-2.5 text-sm font-bold text-white transition hover:bg-primary-dark">
+                    + إضافة دورة جديدة
+                  </button>
+                </Link>
+              )}
+
+              <div className="inline-flex w-fit items-center rounded-2xl border border-primary/20 bg-primary-light px-4 py-2 text-sm font-bold text-primary">
+                {activeRole === 'MANAGER' ? 'لوحة المدير' : 'لوحة المعلومات'}
+              </div>
             </div>
           </div>
         </div>
@@ -246,10 +287,22 @@ export default function Home() {
 
         {activeRole === 'EMPLOYEE' && stats && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               <Link href="/courses">
                 <div className="cursor-pointer">
-                  <KPICard title="دوراتي" value={stats.myCourses} color="primary" />
+                  <KPICard title="إجمالي دوراتي" value={employeeCourseStats.total} color="primary" />
+                </div>
+              </Link>
+
+              <Link href="/courses">
+                <div className="cursor-pointer">
+                  <KPICard title="الدورات غير المغلقة" value={employeeCourseStats.open} color="yellow" />
+                </div>
+              </Link>
+
+              <Link href="/archive">
+                <div className="cursor-pointer">
+                  <KPICard title="الدورات المغلقة" value={employeeCourseStats.closed} color="green" />
                 </div>
               </Link>
 
@@ -258,19 +311,59 @@ export default function Home() {
                   <KPICard title="مهام متأخرة" value={stats.overdueItems} color="red" />
                 </div>
               </Link>
+            </div>
 
-              <Link href="/courses?status=AWAITING_CLOSURE">
-                <div className="cursor-pointer">
-                  <KPICard title="بانتظار الاعتماد" value={stats.pendingMyApproval} color="yellow" />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <Link href="/courses/create">
+                <div className="cursor-pointer rounded-2xl border border-primary/20 bg-primary-light p-5 shadow-card transition hover:-translate-y-0.5 hover:border-primary hover:bg-primary/10">
+                  <div className="mb-2 text-lg font-extrabold text-primary">إضافة دورة جديدة</div>
+                  <div className="text-sm leading-7 text-text-soft">
+                    إنشاء دورة جديدة والبدء في متابعتها تشغيليًا من لوحة المعلومات مباشرة
+                  </div>
+                </div>
+              </Link>
+
+              <Link href="/courses">
+                <div className="cursor-pointer rounded-2xl border border-border bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-primary-light/30">
+                  <div className="mb-2 text-lg font-extrabold text-primary">إدارة الدورات</div>
+                  <div className="text-sm leading-7 text-text-soft">
+                    استعراض دوراتك المفتوحة ومتابعة العناصر التشغيلية لكل دورة
+                  </div>
+                </div>
+              </Link>
+
+              <Link href="/reports">
+                <div className="cursor-pointer rounded-2xl border border-border bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-primary-light/30">
+                  <div className="mb-2 text-lg font-extrabold text-primary">التقارير الميدانية</div>
+                  <div className="text-sm leading-7 text-text-soft">
+                    استعراض جميع التقارير التي قدمتها وطباعة أي تقرير منها
+                  </div>
                 </div>
               </Link>
             </div>
 
             <div className="rounded-2xl border border-border bg-white p-6 shadow-card">
-              <h3 className="mb-4 text-lg font-extrabold text-text-main">دوراتي النشطة</h3>
-              <div className="py-6 text-center text-text-soft">
-                <Link href="/courses" className="font-bold text-primary hover:text-primary-dark">
-                  الذهاب لقائمة الدورات
+              <h3 className="mb-4 text-lg font-extrabold text-text-main">الوصول السريع</h3>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <Link href="/courses/create">
+                  <div className="cursor-pointer rounded-2xl border border-border bg-background px-4 py-5 text-center transition hover:border-primary/30 hover:bg-primary-light/30">
+                    <div className="mb-2 font-extrabold text-primary">إضافة دورة</div>
+                    <div className="text-sm text-text-soft">بدء دورة جديدة</div>
+                  </div>
+                </Link>
+
+                <Link href="/archive">
+                  <div className="cursor-pointer rounded-2xl border border-border bg-background px-4 py-5 text-center transition hover:border-primary/30 hover:bg-primary-light/30">
+                    <div className="mb-2 font-extrabold text-primary">أرشيفي</div>
+                    <div className="text-sm text-text-soft">الدورات المغلقة الخاصة بك</div>
+                  </div>
+                </Link>
+
+                <Link href="/messages">
+                  <div className="cursor-pointer rounded-2xl border border-border bg-background px-4 py-5 text-center transition hover:border-primary/30 hover:bg-primary-light/30">
+                    <div className="mb-2 font-extrabold text-primary">المراسلات</div>
+                    <div className="text-sm text-text-soft">الوصول إلى الرسائل</div>
+                  </div>
                 </Link>
               </div>
             </div>
