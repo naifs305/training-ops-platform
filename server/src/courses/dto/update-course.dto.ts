@@ -4,7 +4,6 @@ import {
   IsInt,
   IsOptional,
   IsString,
-  IsUUID,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -69,15 +68,15 @@ export class UpdateCourseDto {
   requiresTrainerCompensation?: boolean;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   operationalProjectId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   primaryEmployeeId?: string;
 
   @IsOptional()
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsString({ each: true })
   supportingEmployeeIds?: string[];
 }
