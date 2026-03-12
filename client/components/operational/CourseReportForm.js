@@ -184,6 +184,56 @@ function AttachmentCard({ file, index, onRemove }) {
   );
 }
 
+function TextField({ label, name, value, onChange, placeholder, required = false, type = 'text', min }) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs font-bold text-text-soft">
+        {label}
+        {required ? <span className="mr-1 text-danger">*</span> : null}
+      </label>
+      <input
+        type={type}
+        min={min}
+        name={name}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="w-full rounded-2xl border border-border bg-white p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+        required={required}
+      />
+    </div>
+  );
+}
+
+function TextAreaField({ label, name, value, onChange, placeholder, required = false, minHeight = '120px' }) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs font-bold text-text-soft">
+        {label}
+        {required ? <span className="mr-1 text-danger">*</span> : null}
+      </label>
+      <textarea
+        name={name}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="w-full rounded-2xl border border-border bg-white p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
+        style={{ minHeight }}
+        required={required}
+      />
+    </div>
+  );
+}
+
+function formatLocationType(value) {
+  const map = {
+    INTERNAL: 'داخلي',
+    EXTERNAL: 'خارجي',
+    REMOTE: 'عن بُعد',
+  };
+  return map[value] || value || '-';
+}
+
 export default function CourseReportForm({ trackingId, onClose, onSuccess, course }) {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
@@ -192,6 +242,15 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
     lms_content_evaluation: { rating: '', comment: '' },
     trainee_evaluation: { rating: '', comment: '' },
     program_evaluation: { rating: '', comment: '' },
+    registered_trainees_count: '',
+    actual_attendance_count: '',
+    trainers_count: '',
+    translators_count: '',
+    venue_evaluation: '',
+    logistics_items: '',
+    positives: '',
+    negatives: '',
+    recommendations: '',
     other_notes: '',
     declarationConfirmed: false,
     attachments: [],
@@ -213,6 +272,14 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
         `${course.primaryEmployee?.firstName || ''} ${course.primaryEmployee?.lastName || ''}`.trim() || '-',
     };
   }, [course]);
+
+  const attendanceRate = useMemo(() => {
+    const registered = Number(form.registered_trainees_count);
+    const actual = Number(form.actual_attendance_count);
+
+    if (!registered || !actual || registered <= 0) return '';
+    return `${((actual / registered) * 100).toFixed(1)}%`;
+  }, [form.registered_trainees_count, form.actual_attendance_count]);
 
   const completionStats = useMemo(() => {
     const keys = [
@@ -339,6 +406,16 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
       }
     }
 
+    if (!form.registered_trainees_count || !form.actual_attendance_count) {
+      toast.error('أكمل بيانات المشاركة الأساسية');
+      return false;
+    }
+
+    if (!form.venue_evaluation.trim()) {
+      toast.error('أدخل تقييم مقر التدريب');
+      return false;
+    }
+
     if (!form.declarationConfirmed) {
       toast.error('يجب الإقرار بصحة البيانات قبل التقديم');
       return false;
@@ -357,6 +434,7 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
     try {
       await api.post(`/closure/${trackingId}/report`, {
         ...form,
+        attendance_rate: attendanceRate,
         generatedCourseInfo: courseInfo,
       });
 
@@ -403,11 +481,92 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
           <ReadOnlyField label="كود الدورة" value={courseInfo?.code} />
           <ReadOnlyField label="المشروع التشغيلي" value={courseInfo?.project} />
           <ReadOnlyField label="المدينة" value={courseInfo?.city} />
-          <ReadOnlyField label="مقر التنفيذ" value={courseInfo?.locationType} />
+          <ReadOnlyField label="مقر التنفيذ" value={formatLocationType(courseInfo?.locationType)} />
           <ReadOnlyField label="تاريخ البداية" value={courseInfo?.startDate} />
           <ReadOnlyField label="تاريخ النهاية" value={courseInfo?.endDate} />
           <ReadOnlyField label="عدد المتدربين" value={courseInfo?.traineesCount} />
           <ReadOnlyField label="المشرف / المنسق" value={courseInfo?.supervisor} />
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
+        <div className="mb-4">
+          <h4 className="text-base font-extrabold text-text-main">إحصائيات المشاركة</h4>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <TextField
+            label="عدد المشاركين المسجلين"
+            name="registered_trainees_count"
+            value={form.registered_trainees_count}
+            onChange={handleChange}
+            placeholder="مثال: 14"
+            type="number"
+            min="0"
+            required
+          />
+
+          <TextField
+            label="عدد الحضور الفعلي"
+            name="actual_attendance_count"
+            value={form.actual_attendance_count}
+            onChange={handleChange}
+            placeholder="مثال: 14"
+            type="number"
+            min="0"
+            required
+          />
+
+          <TextField
+            label="عدد المدربين"
+            name="trainers_count"
+            value={form.trainers_count}
+            onChange={handleChange}
+            placeholder="مثال: 3"
+            type="number"
+            min="0"
+          />
+
+          <TextField
+            label="عدد المترجمين"
+            name="translators_count"
+            value={form.translators_count}
+            onChange={handleChange}
+            placeholder="مثال: 1"
+            type="number"
+            min="0"
+          />
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-border bg-background p-4">
+          <div className="mb-1 text-xs font-bold text-text-soft">نسبة الحضور المحسوبة تلقائيًا</div>
+          <div className="text-lg font-extrabold text-primary">{attendanceRate || '-'}</div>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
+        <div className="mb-4">
+          <h4 className="text-base font-extrabold text-text-main">تقييم المرافق والخدمات</h4>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <TextField
+            label="تقييم مقر التدريب"
+            name="venue_evaluation"
+            value={form.venue_evaluation}
+            onChange={handleChange}
+            placeholder="مثال: جيد"
+            required
+          />
+
+          <TextAreaField
+            label="التجهيزات اللوجستية"
+            name="logistics_items"
+            value={form.logistics_items}
+            onChange={handleChange}
+            placeholder="مثال: ملفات - نوت - أقلام - سبورة - أوراق"
+            minHeight="96px"
+          />
         </div>
       </div>
 
@@ -455,6 +614,48 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
         required
         helperItems={sectionGuides.program_evaluation}
       />
+
+      <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
+        <div className="mb-4">
+          <h4 className="text-base font-extrabold text-text-main">الإيجابيات والملاحظات المميزة</h4>
+        </div>
+        <TextAreaField
+          label="اكتب كل نقطة في سطر مستقل"
+          name="positives"
+          value={form.positives}
+          onChange={handleChange}
+          placeholder={'مثال:\nقرب القاعات\nالالتزام وانضباط المتدربين'}
+          minHeight="120px"
+        />
+      </div>
+
+      <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
+        <div className="mb-4">
+          <h4 className="text-base font-extrabold text-text-main">السلبيات والتحديات</h4>
+        </div>
+        <TextAreaField
+          label="اكتب كل نقطة في سطر مستقل"
+          name="negatives"
+          value={form.negatives}
+          onChange={handleChange}
+          placeholder={'مثال:\nوجود القاعة في نفس دور المطعم'}
+          minHeight="120px"
+        />
+      </div>
+
+      <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
+        <div className="mb-4">
+          <h4 className="text-base font-extrabold text-text-main">التوصيات والمقترحات</h4>
+        </div>
+        <TextAreaField
+          label="اكتب كل نقطة في سطر مستقل"
+          name="recommendations"
+          value={form.recommendations}
+          onChange={handleChange}
+          placeholder={'مثال:\nزيارة لفنادق أخرى للتأكد من توفير كافة الاحتياجات التدريبية'}
+          minHeight="120px"
+        />
+      </div>
 
       <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
         <div className="mb-3">
