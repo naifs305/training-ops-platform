@@ -162,27 +162,7 @@ export class SubmitReportDto {
 
   @IsOptional()
   @IsString()
-  venue_evaluation?: string;
-
-  @IsOptional()
-  @IsString()
-  logistics_items?: string;
-
-  @IsOptional()
-  @IsString()
-  positives?: string;
-
-  @IsOptional()
-  @IsString()
-  negatives?: string;
-
-  @IsOptional()
-  @IsString()
   recommendations?: string;
-
-  @IsOptional()
-  @IsString()
-  other_notes?: string;
 
   @IsBoolean()
   declarationConfirmed: boolean;
