@@ -79,20 +79,20 @@ export default function MainLayout({ children }) {
     : 'مستخدم';
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background font-cairo">
+    <div className="flex min-h-screen w-full overflow-x-hidden bg-background font-cairo">
       <Sidebar />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden">
         <Header />
 
-        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-background">
-          <div className="min-h-full p-4 md:p-6">{children}</div>
+        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-background">
+          <div className="min-h-full w-full max-w-full p-3 sm:p-4 md:p-6">{children}</div>
         </main>
       </div>
 
       {newMessagePopup && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#2F3437]/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl border border-border bg-white p-6 shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[#2F3437]/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="w-full max-w-md rounded-t-3xl border border-border bg-white p-5 shadow-[0_24px_60px_rgba(0,0,0,0.18)] sm:rounded-3xl sm:p-6">
             <div className="mb-4">
               <h3 className="text-xl font-extrabold text-primary">رسالة جديدة</h3>
               <p className="mt-2 text-sm text-text-soft">
@@ -101,15 +101,15 @@ export default function MainLayout({ children }) {
             </div>
 
             <div className="mb-5 rounded-2xl border border-border bg-background p-4">
-              <div className="mb-2 text-sm font-bold text-text-main">
+              <div className="mb-2 break-words text-sm font-bold text-text-main">
                 {newMessagePopup.subject || 'بدون عنوان'}
               </div>
-              <div className="line-clamp-3 text-sm leading-7 text-text-soft">
+              <div className="line-clamp-3 break-words text-sm leading-7 text-text-soft">
                 {newMessagePopup.body || 'لا يوجد محتوى'}
               </div>
             </div>
 
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 onClick={rememberPopupMessage}
                 className="rounded-2xl border border-border bg-white px-5 py-2.5 font-bold text-text-main transition hover:bg-background"
