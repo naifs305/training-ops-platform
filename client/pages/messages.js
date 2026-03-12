@@ -8,6 +8,7 @@ export default function MessagesPage() {
 
   const [tab, setTab] = useState('inbox');
   const [composeOpen, setComposeOpen] = useState(false);
+  const [mobileListOpen, setMobileListOpen] = useState(true);
 
   const [users, setUsers] = useState([]);
   const [inboxMessages, setInboxMessages] = useState([]);
@@ -171,6 +172,7 @@ export default function MessagesPage() {
     setTab(nextTab);
     const source = nextTab === 'inbox' ? inboxMessages : sentMessages;
     setSelectedMessageId(source[0]?.id || null);
+    setMobileListOpen(true);
   };
 
   const handleComposeChange = (e) => {
@@ -204,6 +206,7 @@ export default function MessagesPage() {
 
   const handleSelectMessage = async (message) => {
     setSelectedMessageId(message.id);
+    setMobileListOpen(false);
 
     if (tab === 'inbox' && !message.isRead) {
       await markMessageAsRead(message.id);
@@ -248,6 +251,7 @@ export default function MessagesPage() {
       });
       setTab('sent');
       setSelectedMessageId(normalizedSentItem.id);
+      setMobileListOpen(false);
 
       await loadInbox(true);
       await loadSent(true);
@@ -287,15 +291,15 @@ export default function MessagesPage() {
 
   return (
     <MainLayout>
-      <div className="space-y-6">
-        <div className="rounded-3xl border border-border bg-white p-6 shadow-card">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h1 className="text-3xl font-extrabold text-primary">المراسلات</h1>
+      <div className="space-y-4 md:space-y-6 overflow-x-hidden">
+        <div className="rounded-3xl border border-border bg-white p-4 shadow-card md:p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-extrabold text-primary md:text-3xl">المراسلات</h1>
               <p className="mt-1 text-sm text-text-soft">نظام المراسلات الداخلي</p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
               <button
                 onClick={loadAll}
                 className="rounded-2xl border border-border bg-white px-5 py-2.5 text-sm font-bold text-text-main transition hover:bg-background"
@@ -320,10 +324,10 @@ export default function MessagesPage() {
         ) : null}
 
         <div className="overflow-hidden rounded-3xl border border-border bg-white shadow-card">
-          <div className="flex gap-2 border-b border-border p-4">
+          <div className="flex flex-wrap gap-2 border-b border-border p-3 md:p-4">
             <button
               onClick={() => handleOpenTab('inbox')}
-              className={`rounded-2xl px-5 py-2.5 text-sm font-bold transition ${
+              className={`rounded-2xl px-4 py-2.5 text-sm font-bold transition md:px-5 ${
                 tab === 'inbox'
                   ? 'bg-primary text-white'
                   : 'bg-background text-text-main hover:bg-primary-light hover:text-primary'
@@ -334,7 +338,7 @@ export default function MessagesPage() {
 
             <button
               onClick={() => handleOpenTab('sent')}
-              className={`rounded-2xl px-5 py-2.5 text-sm font-bold transition ${
+              className={`rounded-2xl px-4 py-2.5 text-sm font-bold transition md:px-5 ${
                 tab === 'sent'
                   ? 'bg-primary text-white'
                   : 'bg-background text-text-main hover:bg-primary-light hover:text-primary'
@@ -342,14 +346,25 @@ export default function MessagesPage() {
             >
               المرسل
             </button>
+
+            <button
+              onClick={() => setMobileListOpen((prev) => !prev)}
+              className="mr-auto rounded-2xl border border-border bg-white px-4 py-2.5 text-sm font-bold text-text-main transition hover:bg-background md:hidden"
+            >
+              {mobileListOpen ? 'إخفاء القائمة' : 'إظهار القائمة'}
+            </button>
           </div>
 
           <div className="grid min-h-[560px] grid-cols-1 md:grid-cols-3">
-            <div className="border-l border-border bg-background/40">
+            <div
+              className={`border-b border-border bg-background/40 md:border-b-0 md:border-l ${
+                mobileListOpen ? 'block' : 'hidden'
+              } md:block`}
+            >
               {(tab === 'inbox' && loadingInbox) || (tab === 'sent' && loadingSent) ? (
-                <div className="p-6 text-sm text-text-soft">جاري التحميل...</div>
+                <div className="p-4 text-sm text-text-soft md:p-6">جاري التحميل...</div>
               ) : currentMessages.length === 0 ? (
-                <div className="p-6 text-sm text-text-soft">لا توجد رسائل</div>
+                <div className="p-4 text-sm text-text-soft md:p-6">لا توجد رسائل</div>
               ) : (
                 currentMessages.map((message) => (
                   <button
@@ -362,7 +377,7 @@ export default function MessagesPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <div className="truncate text-sm font-bold text-text-main">
+                      <div className="min-w-0 flex-1 truncate text-sm font-bold text-text-main">
                         {tab === 'inbox'
                           ? getDisplayName(message.fromUser)
                           : renderSentRecipients(message)}
@@ -385,15 +400,24 @@ export default function MessagesPage() {
               )}
             </div>
 
-            <div className="p-6 md:col-span-2 md:p-8">
+            <div className={`p-4 md:col-span-2 md:p-8 ${mobileListOpen ? 'hidden md:block' : 'block'}`}>
               {selectedMessage ? (
                 <div className="space-y-5">
+                  <div className="flex items-center justify-between gap-3 md:hidden">
+                    <button
+                      onClick={() => setMobileListOpen(true)}
+                      className="rounded-2xl border border-border bg-white px-4 py-2 text-sm font-bold text-text-main transition hover:bg-background"
+                    >
+                      العودة للقائمة
+                    </button>
+                  </div>
+
                   <div className="border-b border-border pb-5">
-                    <h2 className="text-2xl font-extrabold text-primary">
+                    <h2 className="break-words text-xl font-extrabold text-primary md:text-2xl">
                       {selectedMessage.subject}
                     </h2>
 
-                    <div className="mt-3 text-sm text-text-main">
+                    <div className="mt-3 break-words text-sm leading-7 text-text-main">
                       {tab === 'inbox'
                         ? `من: ${getDisplayName(selectedMessage.fromUser)}`
                         : `إلى: ${renderSentRecipients(selectedMessage)}`}
@@ -404,18 +428,20 @@ export default function MessagesPage() {
                     </div>
 
                     {selectedMessage.course ? (
-                      <div className="mt-3 inline-flex items-center rounded-full bg-primary-light px-3 py-1 text-xs font-bold text-primary">
-                        الدورة المرتبطة: {selectedMessage.course.name}
+                      <div className="mt-3 inline-flex max-w-full items-center rounded-full bg-primary-light px-3 py-1 text-xs font-bold text-primary">
+                        <span className="truncate">
+                          الدورة المرتبطة: {selectedMessage.course.name}
+                        </span>
                       </div>
                     ) : null}
                   </div>
 
-                  <div className="whitespace-pre-wrap text-[15px] leading-8 text-text-main">
+                  <div className="whitespace-pre-wrap break-words text-sm leading-8 text-text-main md:text-[15px]">
                     {selectedMessage.body}
                   </div>
                 </div>
               ) : (
-                <div className="flex h-full items-center justify-center text-lg text-text-soft">
+                <div className="flex h-full min-h-[220px] items-center justify-center text-center text-base text-text-soft md:text-lg">
                   اختر رسالة لعرضها
                 </div>
               )}
@@ -424,10 +450,10 @@ export default function MessagesPage() {
         </div>
 
         {composeOpen ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#2F3437]/45 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-3xl overflow-hidden rounded-3xl border border-border bg-white shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
-              <div className="flex items-center justify-between border-b border-border px-6 py-5">
-                <h2 className="text-2xl font-extrabold text-primary">رسالة جديدة</h2>
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#2F3437]/45 p-0 backdrop-blur-sm md:items-center md:p-4">
+            <div className="max-h-[92vh] w-full overflow-hidden rounded-t-3xl border border-border bg-white shadow-[0_24px_60px_rgba(0,0,0,0.18)] md:max-w-3xl md:rounded-3xl">
+              <div className="flex items-center justify-between border-b border-border px-4 py-4 md:px-6 md:py-5">
+                <h2 className="text-xl font-extrabold text-primary md:text-2xl">رسالة جديدة</h2>
                 <button
                   onClick={() => setComposeOpen(false)}
                   className="text-sm font-bold text-text-soft transition hover:text-primary"
@@ -436,7 +462,7 @@ export default function MessagesPage() {
                 </button>
               </div>
 
-              <form onSubmit={handleSend} className="space-y-5 p-6">
+              <form onSubmit={handleSend} className="max-h-[calc(92vh-72px)] space-y-5 overflow-y-auto p-4 md:p-6">
                 <div>
                   <label className="mb-2 block text-sm font-bold text-text-main">
                     إلى
@@ -487,7 +513,7 @@ export default function MessagesPage() {
                   />
                 </div>
 
-                <div className="flex justify-end gap-3 pt-2">
+                <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
                   <button
                     type="button"
                     onClick={() => setComposeOpen(false)}
