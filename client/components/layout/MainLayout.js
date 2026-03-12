@@ -91,20 +91,20 @@ export default function MainLayout({ children }) {
       </div>
 
       {newMessagePopup && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-[#2F3437]/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="w-full max-w-md rounded-t-3xl border border-border bg-white p-5 shadow-[0_24px_60px_rgba(0,0,0,0.18)] sm:rounded-3xl sm:p-6">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#2F3437]/40 px-3 py-4 backdrop-blur-sm sm:px-4">
+          <div className="w-full max-w-md overflow-hidden rounded-3xl border border-border bg-white p-4 shadow-[0_24px_60px_rgba(0,0,0,0.18)] sm:p-6">
             <div className="mb-4">
               <h3 className="text-xl font-extrabold text-primary">رسالة جديدة</h3>
-              <p className="mt-2 text-sm text-text-soft">
+              <p className="mt-2 text-sm leading-7 text-text-soft">
                 لديك رسالة جديدة من: <span className="font-bold text-text-main">{senderName}</span>
               </p>
             </div>
 
             <div className="mb-5 rounded-2xl border border-border bg-background p-4">
-              <div className="mb-2 break-words text-sm font-bold text-text-main">
+              <div className="mb-2 break-words text-sm font-bold leading-7 text-text-main">
                 {newMessagePopup.subject || 'بدون عنوان'}
               </div>
-              <div className="line-clamp-3 break-words text-sm leading-7 text-text-soft">
+              <div className="line-clamp-4 break-words text-sm leading-8 text-text-soft">
                 {newMessagePopup.body || 'لا يوجد محتوى'}
               </div>
             </div>
@@ -112,14 +112,14 @@ export default function MainLayout({ children }) {
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 onClick={rememberPopupMessage}
-                className="rounded-2xl border border-border bg-white px-5 py-2.5 font-bold text-text-main transition hover:bg-background"
+                className="w-full rounded-2xl border border-border bg-white px-5 py-3 font-bold text-text-main transition hover:bg-background sm:w-auto"
               >
                 لاحقًا
               </button>
 
               <button
                 onClick={openMessagePage}
-                className="rounded-2xl bg-primary px-5 py-2.5 font-bold text-white transition hover:bg-primary-dark"
+                className="w-full rounded-2xl bg-primary px-5 py-3 font-bold text-white transition hover:bg-primary-dark sm:w-auto"
               >
                 عرض الرسالة
               </button>
