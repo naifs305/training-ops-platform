@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import DatePicker from 'react-datepicker';
 import MainLayout from '../../components/layout/MainLayout';
@@ -35,40 +35,81 @@ function formatDateForApi(date) {
   return `${year}-${month}-${day}`;
 }
 
-function formatDateForDisplay(date) {
-  if (!date) return '';
-  return new Intl.DateTimeFormat('ar-SA', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  }).format(date);
+function formatDateForDisplay(dateString) {
+  if (!dateString) return '';
+  return dateString;
 }
 
 const DateRangeInput = forwardRef(function DateRangeInput(
-  { value, onClick },
+  { startDate, endDate, onClick, onClear },
   ref,
 ) {
   return (
-    <button
-      type="button"
-      ref={ref}
-      onClick={onClick}
-      className="flex w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 transition hover:border-slate-400 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-200"
-    >
-      <span className="truncate text-right">{value || 'اختر تاريخ البداية والنهاية'}</span>
-      <span className="mr-3 text-base text-slate-400">📅</span>
-    </button>
+    <div className="w-full">
+      <button
+        type="button"
+        ref={ref}
+        onClick={onClick}
+        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-right transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="text-lg text-slate-400">📅</div>
+
+            <div className="grid min-w-0 flex-1 grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="mb-1 text-xs font-medium text-slate-500">تاريخ البداية</div>
+                <div className="truncate text-sm font-semibold text-slate-900">
+                  {startDate ? formatDateForDisplay(startDate) : 'اختر تاريخ البداية'}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="mb-1 text-xs font-medium text-slate-500">تاريخ النهاية</div>
+                <div className="truncate text-sm font-semibold text-slate-900">
+                  {endDate ? formatDateForDisplay(endDate) : 'اختر تاريخ النهاية'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {(startDate || endDate) && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClear();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onClear();
+                }
+              }}
+              className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              مسح
+            </span>
+          )}
+        </div>
+      </button>
+    </div>
   );
 });
 
 export default function CreateCoursePage() {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const pickerRef = useRef(null);
 
   const [form, setForm] = useState(initialForm);
   const [projects, setProjects] = useState([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
   const startDateObj = form.startDate ? new Date(form.startDate) : null;
   const endDateObj = form.endDate ? new Date(form.endDate) : null;
@@ -94,7 +135,7 @@ export default function CreateCoursePage() {
           }));
         }
       } catch (error) {
-        console.error('Failed to load projects: - create.js:97', error);
+        console.error('Failed to load projects: - create.js:138', error);
         toast.error('تعذر تحميل المشاريع التشغيلية');
       } finally {
         setIsLoadingProjects(false);
@@ -127,10 +168,23 @@ export default function CreateCoursePage() {
 
   const handleDateRangeChange = (dates) => {
     const [start, end] = dates;
+
     setForm((prev) => ({
       ...prev,
       startDate: start ? formatDateForApi(start) : '',
       endDate: end ? formatDateForApi(end) : '',
+    }));
+
+    if (start && end) {
+      setIsDatePickerOpen(false);
+    }
+  };
+
+  const clearDateRange = () => {
+    setForm((prev) => ({
+      ...prev,
+      startDate: '',
+      endDate: '',
     }));
   };
 
@@ -187,7 +241,7 @@ export default function CreateCoursePage() {
 
       router.push('/courses');
     } catch (error) {
-      console.error('Create course failed: - create.js:190', error);
+      console.error('Create course failed: - create.js:244', error);
       toast.error(error?.response?.data?.message || 'تعذر إنشاء الدورة');
     } finally {
       setIsSubmitting(false);
@@ -245,9 +299,15 @@ export default function CreateCoursePage() {
                 />
 
                 <DateRangeField
+                  pickerRef={pickerRef}
                   startDate={startDateObj}
                   endDate={endDateObj}
+                  startDateValue={form.startDate}
+                  endDateValue={form.endDate}
+                  isOpen={isDatePickerOpen}
+                  setIsOpen={setIsDatePickerOpen}
                   onChange={handleDateRangeChange}
+                  onClear={clearDateRange}
                 />
 
                 <Field
@@ -415,14 +475,17 @@ function SelectField({
   );
 }
 
-function DateRangeField({ startDate, endDate, onChange }) {
-  const displayValue =
-    startDate && endDate
-      ? `${formatDateForDisplay(startDate)} - ${formatDateForDisplay(endDate)}`
-      : startDate
-      ? `${formatDateForDisplay(startDate)} - اختر تاريخ النهاية`
-      : '';
-
+function DateRangeField({
+  pickerRef,
+  startDate,
+  endDate,
+  startDateValue,
+  endDateValue,
+  isOpen,
+  setIsOpen,
+  onChange,
+  onClear,
+}) {
   return (
     <div className="md:col-span-2">
       <span className="mb-2 flex items-center gap-1 text-sm font-medium text-slate-700">
@@ -431,19 +494,34 @@ function DateRangeField({ startDate, endDate, onChange }) {
       </span>
 
       <DatePicker
+        ref={pickerRef}
         selected={startDate}
         onChange={onChange}
         startDate={startDate}
         endDate={endDate}
         selectsRange
-        monthsShown={2}
+        open={isOpen}
+        onInputClick={() => setIsOpen(true)}
+        onClickOutside={() => setIsOpen(false)}
+        onSelect={() => {
+          if (startDate && endDate) {
+            setIsOpen(false);
+          }
+        }}
         shouldCloseOnSelect={false}
+        monthsShown={2}
         dateFormat="yyyy-MM-dd"
         placeholderText="اختر تاريخ البداية والنهاية"
         calendarClassName="border border-slate-200 shadow-xl"
         wrapperClassName="w-full"
-        customInput={<DateRangeInput value={displayValue} />}
         withPortal
+        customInput={
+          <DateRangeInput
+            startDate={startDateValue}
+            endDate={endDateValue}
+            onClear={onClear}
+          />
+        }
       />
     </div>
   );
