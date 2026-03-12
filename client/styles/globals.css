@@ -21,6 +21,7 @@
 
 html {
   direction: rtl;
+  overflow-x: hidden;
 }
 
 body {
@@ -29,6 +30,12 @@ body {
   background-color: var(--color-background);
   color: var(--color-text-main);
   font-family: 'Cairo', sans-serif;
+  overflow-x: hidden;
+}
+
+#__next {
+  min-height: 100vh;
+  overflow-x: hidden;
 }
 
 input,
@@ -38,8 +45,19 @@ textarea {
   font-family: inherit;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+img,
+svg,
+video,
+canvas,
+iframe {
+  max-width: 100%;
+  height: auto;
 }
 
 a {
