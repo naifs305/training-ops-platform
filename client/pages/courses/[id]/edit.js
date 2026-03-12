@@ -136,6 +136,8 @@ export default function EditCoursePage() {
   const inputClass =
     'w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10';
 
+  const labelClass = 'mb-2 block text-sm font-bold text-text-main';
+
   if (loading) {
     return (
       <MainLayout>
@@ -159,67 +161,85 @@ export default function EditCoursePage() {
           className="space-y-6 rounded-3xl border border-border bg-white p-6 shadow-card"
         >
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <input
-              className={inputClass}
-              placeholder="اسم الدورة"
-              value={form.name}
-              onChange={(e) => handleChange('name', e.target.value)}
-            />
+            <div>
+              <label className={labelClass}>اسم الدورة</label>
+              <input
+                className={inputClass}
+                value={form.name}
+                onChange={(e) => handleChange('name', e.target.value)}
+              />
+            </div>
 
-            <input
-              className={inputClass}
-              placeholder="المدينة"
-              value={form.city}
-              onChange={(e) => handleChange('city', e.target.value)}
-            />
+            <div>
+              <label className={labelClass}>المدينة</label>
+              <input
+                className={inputClass}
+                value={form.city}
+                onChange={(e) => handleChange('city', e.target.value)}
+              />
+            </div>
 
-            <input
-              type="date"
-              className={inputClass}
-              value={form.startDate}
-              onChange={(e) => handleChange('startDate', e.target.value)}
-            />
+            <div>
+              <label className={labelClass}>تاريخ البداية</label>
+              <input
+                type="date"
+                className={inputClass}
+                value={form.startDate}
+                onChange={(e) => handleChange('startDate', e.target.value)}
+              />
+            </div>
 
-            <input
-              type="date"
-              className={inputClass}
-              value={form.endDate}
-              onChange={(e) => handleChange('endDate', e.target.value)}
-            />
+            <div>
+              <label className={labelClass}>تاريخ النهاية</label>
+              <input
+                type="date"
+                className={inputClass}
+                value={form.endDate}
+                onChange={(e) => handleChange('endDate', e.target.value)}
+              />
+            </div>
 
-            <input
-              type="number"
-              className={inputClass}
-              placeholder="عدد المتدربين"
-              value={form.numTrainees}
-              onChange={(e) => handleChange('numTrainees', e.target.value)}
-            />
+            <div>
+              <label className={labelClass}>عدد المتدربين</label>
+              <input
+                type="number"
+                className={inputClass}
+                value={form.numTrainees}
+                onChange={(e) => handleChange('numTrainees', e.target.value)}
+              />
+            </div>
 
-            <select
-              className={inputClass}
-              value={form.operationalProjectId}
-              onChange={(e) => handleChange('operationalProjectId', e.target.value)}
-            >
-              <option value="">اختر المشروع التشغيلي</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
+            <div>
+              <label className={labelClass}>المشروع التشغيلي</label>
+              <select
+                className={inputClass}
+                value={form.operationalProjectId}
+                onChange={(e) => handleChange('operationalProjectId', e.target.value)}
+              >
+                <option value="">اختر المشروع التشغيلي</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-            <select
-              className={inputClass}
-              value={form.primaryEmployeeId}
-              onChange={(e) => handleChange('primaryEmployeeId', e.target.value)}
-            >
-              <option value="">اختر الموظف المسؤول</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.firstName} {user.lastName}
-                </option>
-              ))}
-            </select>
+            <div>
+              <label className={labelClass}>الموظف المسؤول</label>
+              <select
+                className={inputClass}
+                value={form.primaryEmployeeId}
+                onChange={(e) => handleChange('primaryEmployeeId', e.target.value)}
+              >
+                <option value="">اختر الموظف المسؤول</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.firstName} {user.lastName}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="rounded-3xl border border-border bg-background p-4">
