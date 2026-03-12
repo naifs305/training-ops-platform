@@ -70,23 +70,25 @@ export default function Sidebar() {
           )}
         </div>
 
-        {activeRole === 'MANAGER' && (
-          <div className={itemWrapperClass}>
-            <div className={sectionTitleClass}>التقارير والمتابعة</div>
+        <div className={itemWrapperClass}>
+          <div className={sectionTitleClass}>التقارير والمتابعة</div>
 
-            <Link href="/reports" className={getLinkClass('/reports')}>
-              <span className="mx-2">التقارير</span>
-            </Link>
+          <Link href="/reports" className={getLinkClass('/reports')}>
+            <span className="mx-2">التقارير الميدانية</span>
+          </Link>
 
-            <Link href="/kpis" className={getLinkClass('/kpis')}>
-              <span className="mx-2">مؤشرات الأداء</span>
-            </Link>
+          {activeRole === 'MANAGER' && (
+            <>
+              <Link href="/kpis" className={getLinkClass('/kpis')}>
+                <span className="mx-2">مؤشرات الأداء</span>
+              </Link>
 
-            <Link href="/audit" className={getLinkClass('/audit')}>
-              <span className="mx-2">سجل المراجعة</span>
-            </Link>
-          </div>
-        )}
+              <Link href="/audit" className={getLinkClass('/audit')}>
+                <span className="mx-2">سجل المراجعة</span>
+              </Link>
+            </>
+          )}
+        </div>
 
         <div className={itemWrapperClass}>
           <div className={sectionTitleClass}>الاتصال</div>
