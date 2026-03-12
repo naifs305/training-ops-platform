@@ -105,12 +105,6 @@ export default function Home() {
       .finally(() => setEmployeeLoading(false));
   }, [activeRole, user]);
 
-  if (loading) {
-    return <div className="p-10 font-cairo text-text-main">جاري التحميل...</div>;
-  }
-
-  if (!user) return null;
-
   const topPerformer = kpiRows?.length ? kpiRows[0] : null;
   const lowPerformer = kpiRows?.length ? kpiRows[kpiRows.length - 1] : null;
   const averageScore = kpiRows?.length
@@ -125,14 +119,12 @@ export default function Home() {
   );
 
   const employeeClosedCourses = useMemo(
-    () =>
-      employeeCourses.filter((course) => ['CLOSED', 'ARCHIVED'].includes(course.status)),
+    () => employeeCourses.filter((course) => ['CLOSED', 'ARCHIVED'].includes(course.status)),
     [employeeCourses],
   );
 
   const employeeOpenCourses = useMemo(
-    () =>
-      employeeCourses.filter((course) => !['CLOSED', 'ARCHIVED'].includes(course.status)),
+    () => employeeCourses.filter((course) => !['CLOSED', 'ARCHIVED'].includes(course.status)),
     [employeeCourses],
   );
 
@@ -145,6 +137,12 @@ export default function Home() {
       ),
     [employeeCourses],
   );
+
+  if (loading) {
+    return <div className="p-10 font-cairo text-text-main">جاري التحميل...</div>;
+  }
+
+  if (!user) return null;
 
   return (
     <MainLayout>
