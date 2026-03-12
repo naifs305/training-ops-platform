@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException, BadRequestException } from '@nestjs/com
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CreateCourseDto } from './dto/create-course.dto';
+import { UpdateCourseDto } from './dto/update-course.dto';
 import { ElementStatus } from '@prisma/client';
 
 @Injectable()
@@ -94,6 +95,44 @@ export class CoursesService {
     await this.prisma.courseClosureTracking.createMany({ data });
   }
 
+  private getConditionalStatus(value: boolean): ElementStatus {
+    return value ? 'NOT_STARTED' : 'NOT_APPLICABLE';
+  }
+
+  private async refreshConditionalClosureElements(courseId: string, data: {
+    requiresAdvance?: boolean;
+    requiresAdvanceSettlement?: boolean;
+    requiresRevenue?: boolean;
+    materialsIssued?: boolean;
+  }) {
+    const keysToUpdate: { key: string; value?: boolean }[] = [
+      { key: 'advance_req', value: data.requiresAdvance },
+      { key: 'settlement', value: data.requiresAdvanceSettlement },
+      { key: 'revenues', value: data.requiresRevenue },
+      { key: 'materials', value: data.materialsIssued },
+    ];
+
+    for (const item of keysToUpdate) {
+      if (typeof item.value !== 'boolean') continue;
+
+      const element = await this.prisma.closureElement.findFirst({
+        where: { key: item.key },
+      });
+
+      if (!element) continue;
+
+      await this.prisma.courseClosureTracking.updateMany({
+        where: {
+          courseId,
+          elementId: element.id,
+        },
+        data: {
+          status: this.getConditionalStatus(item.value),
+        },
+      });
+    }
+  }
+
   async findAll(userId: string, role: string, projectId?: string, status?: string) {
     const where: any = {};
 
@@ -152,6 +191,110 @@ export class CoursesService {
     }
 
     return course;
+  }
+
+  async updateCourse(id: string, dto: UpdateCourseDto, userId: string, role: string) {
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+      include: {
+        supportingTeam: true,
+        closureElements: true,
+      },
+    });
+
+    if (!course) {
+      throw new BadRequestException('الدورة غير موجودة');
+    }
+
+    if (role === 'EMPLOYEE') {
+      if (course.primaryEmployeeId !== userId) {
+        throw new ForbiddenException('لا تملك صلاحية تعديل هذه الدورة');
+      }
+
+      if (course.status !== 'PREPARATION') {
+        throw new BadRequestException('لا يمكن تعديل الدورة بعد انتقالها من مرحلة الإعداد');
+      }
+    }
+
+    const updateData: any = {};
+
+    if (dto.name !== undefined) updateData.name = dto.name;
+    if (dto.code !== undefined) updateData.code = dto.code;
+    if (dto.city !== undefined) updateData.city = dto.city;
+    if (dto.locationType !== undefined) updateData.locationType = dto.locationType;
+    if (dto.startDate !== undefined) updateData.startDate = new Date(dto.startDate);
+    if (dto.endDate !== undefined) updateData.endDate = new Date(dto.endDate);
+    if (dto.numTrainees !== undefined) updateData.numTrainees = dto.numTrainees;
+    if (dto.courseType !== undefined) updateData.courseType = dto.courseType;
+    if (dto.requiresAdvance !== undefined) updateData.requiresAdvance = dto.requiresAdvance;
+    if (dto.requiresRevenue !== undefined) updateData.requiresRevenue = dto.requiresRevenue;
+    if (dto.materialsIssued !== undefined) updateData.materialsIssued = dto.materialsIssued;
+    if (dto.requiresAdvanceSettlement !== undefined) {
+      updateData.requiresAdvanceSettlement = dto.requiresAdvanceSettlement;
+    }
+    if (dto.requiresSupervisorCompensation !== undefined) {
+      updateData.requiresSupervisorCompensation = dto.requiresSupervisorCompensation;
+    }
+    if (dto.requiresTrainerCompensation !== undefined) {
+      updateData.requiresTrainerCompensation = dto.requiresTrainerCompensation;
+    }
+    if (dto.operationalProjectId !== undefined) {
+      updateData.operationalProject = { connect: { id: dto.operationalProjectId } };
+    }
+    if (dto.primaryEmployeeId !== undefined) {
+      updateData.primaryEmployee = { connect: { id: dto.primaryEmployeeId } };
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.course.update({
+        where: { id },
+        data: updateData,
+      });
+
+      if (dto.supportingEmployeeIds !== undefined) {
+        await tx.courseSupport.deleteMany({
+          where: { courseId: id },
+        });
+
+        if (dto.supportingEmployeeIds.length > 0) {
+          await tx.courseSupport.createMany({
+            data: dto.supportingEmployeeIds.map((supportUserId) => ({
+              courseId: id,
+              userId: supportUserId,
+            })),
+          });
+        }
+      }
+    });
+
+    await this.refreshConditionalClosureElements(id, {
+      requiresAdvance: dto.requiresAdvance,
+      requiresAdvanceSettlement: dto.requiresAdvanceSettlement,
+      requiresRevenue: dto.requiresRevenue,
+      materialsIssued: dto.materialsIssued,
+    });
+
+    const updatedCourse = await this.prisma.course.findUnique({
+      where: { id },
+      include: {
+        primaryEmployee: true,
+        operationalProject: true,
+        supportingTeam: { include: { user: true } },
+        closureElements: { include: { element: true } },
+      },
+    });
+
+    await this.audit.log(
+      userId,
+      role,
+      'COURSE_UPDATED',
+      {
+        courseName: updatedCourse?.name,
+      },
+      id,
+    );
+
+    return updatedCourse;
   }
 
   async archiveCourse(id: string, managerId: string) {

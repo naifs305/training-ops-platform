@@ -1,6 +1,18 @@
-import { Controller, Post, Body, Get, Param, Req, UseGuards, Query, Put, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Param,
+  Req,
+  UseGuards,
+  Query,
+  Put,
+  Delete,
+} from '@nestjs/common';
 import { CoursesService } from './courses.service';
 import { CreateCourseDto } from './dto/create-course.dto';
+import { UpdateCourseDto } from './dto/update-course.dto';
 import { ReassignCourseDto } from './dto/reassign-course.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
@@ -33,7 +45,7 @@ export class CoursesController {
       req.user.userId,
       this.getUserRole(req),
       query.projectId,
-      query.status
+      query.status,
     );
   }
 
@@ -49,6 +61,20 @@ export class CoursesController {
   @Get(':id')
   async findOne(@Param('id') id: string, @Req() req: any) {
     return this.coursesService.findOne(id, req.user.userId, this.getUserRole(req));
+  }
+
+  @Put(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateCourseDto,
+    @Req() req: any,
+  ) {
+    return this.coursesService.updateCourse(
+      id,
+      dto,
+      req.user.userId,
+      this.getUserRole(req),
+    );
   }
 
   @Put(':id/archive')

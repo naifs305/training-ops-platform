@@ -6,6 +6,64 @@ import MainLayout from '../../components/layout/MainLayout';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 
+function EditIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" />
+    </svg>
+  );
+}
+
+function DeleteIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+
+function ArchiveIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      className="h-4 w-4"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8" />
+      <path d="M23 3H1v5h22V3Z" />
+      <path d="M10 12h4" />
+    </svg>
+  );
+}
+
 export default function Courses() {
   const router = useRouter();
   const { activeRole } = useAuth();
@@ -102,6 +160,22 @@ export default function Courses() {
     } finally {
       setActionLoadingId(null);
     }
+  };
+
+  const handleEdit = (courseId) => {
+    router.push(`/courses/${courseId}/edit`);
+  };
+
+  const canEditCourse = (course) => {
+    if (activeRole === 'MANAGER') return true;
+    if (activeRole === 'EMPLOYEE' && course.status === 'PREPARATION') return true;
+    return false;
+  };
+
+  const canDeleteCourse = (course) => {
+    if (activeRole === 'MANAGER') return true;
+    if (activeRole === 'EMPLOYEE' && course.status === 'PREPARATION') return true;
+    return false;
   };
 
   const getStatusLabel = (status) => {
@@ -216,14 +290,30 @@ export default function Courses() {
                 </Link>
 
                 <div className="mt-auto px-6 pb-6">
-                  {activeRole === 'EMPLOYEE' && course.status === 'PREPARATION' && (
-                    <button
-                      onClick={() => handleDelete(course.id)}
-                      disabled={actionLoadingId === course.id}
-                      className="w-full rounded-2xl border border-danger/20 px-4 py-3 text-sm font-bold text-danger transition hover:bg-red-50 disabled:opacity-50"
-                    >
-                      حذف الدورة
-                    </button>
+                  {(canEditCourse(course) || canDeleteCourse(course)) && (
+                    <div className="mb-3 flex items-center gap-2">
+                      {canEditCourse(course) && (
+                        <button
+                          onClick={() => handleEdit(course.id)}
+                          disabled={actionLoadingId === course.id}
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-border bg-white text-primary transition hover:border-primary hover:bg-primary-light disabled:opacity-50"
+                          title="تعديل الدورة"
+                        >
+                          <EditIcon />
+                        </button>
+                      )}
+
+                      {canDeleteCourse(course) && (
+                        <button
+                          onClick={() => handleDelete(course.id)}
+                          disabled={actionLoadingId === course.id}
+                          className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-danger/20 bg-white text-danger transition hover:bg-red-50 disabled:opacity-50"
+                          title="حذف الدورة"
+                        >
+                          <DeleteIcon />
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {activeRole === 'MANAGER' && (
@@ -258,9 +348,10 @@ export default function Courses() {
                         <button
                           onClick={() => handleArchive(course.id)}
                           disabled={actionLoadingId === course.id}
-                          className="w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm font-bold text-text-main transition hover:border-primary hover:bg-primary-light hover:text-primary disabled:opacity-50"
+                          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-white px-4 py-3 text-sm font-bold text-text-main transition hover:border-primary hover:bg-primary-light hover:text-primary disabled:opacity-50"
                         >
-                          نقل إلى الأرشيف
+                          <ArchiveIcon />
+                          <span>نقل إلى الأرشيف</span>
                         </button>
                       )}
                     </div>
