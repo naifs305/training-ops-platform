@@ -5,6 +5,12 @@ import MainLayout from '../../../components/layout/MainLayout';
 import api from '../../../lib/axios';
 import toast from 'react-hot-toast';
 
+const locationTypeOptions = [
+  { value: 'INTERNAL', label: 'داخلي' },
+  { value: 'EXTERNAL', label: 'خارجي' },
+  { value: 'REMOTE', label: 'عن بُعد' },
+];
+
 function formatDateForApi(date) {
   if (!date) return '';
   const year = date.getFullYear();
@@ -80,22 +86,20 @@ export default function EditCoursePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [projects, setProjects] = useState([]);
-  const [users, setUsers] = useState([]);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
 
   const [form, setForm] = useState({
-    name: '',
+    title: '',
+    operationalProjectId: '',
+    locationType: '',
     city: '',
     startDate: '',
     endDate: '',
-    numTrainees: '',
-    operationalProjectId: '',
-    primaryEmployeeId: '',
+    traineesCount: '',
     requiresAdvance: false,
-    requiresRevenue: false,
-    materialsIssued: false,
     requiresAdvanceSettlement: false,
-    requiresSupervisorCompensation: false,
+    requiresMaterialReturn: false,
+    requiresCoordinatorCompensation: false,
     requiresTrainerCompensation: false,
   });
 
@@ -109,14 +113,14 @@ export default function EditCoursePage() {
 
   const canSubmit = useMemo(() => {
     return (
-      form.name.trim() &&
+      form.title.trim() &&
+      form.operationalProjectId &&
+      form.locationType &&
       form.city.trim() &&
       form.startDate &&
       form.endDate &&
-      form.numTrainees &&
-      Number(form.numTrainees) > 0 &&
-      form.operationalProjectId &&
-      form.primaryEmployeeId
+      form.traineesCount &&
+      Number(form.traineesCount) > 0
     );
   }, [form]);
 
@@ -124,31 +128,35 @@ export default function EditCoursePage() {
     try {
       setLoading(true);
 
-      const [courseRes, projectsRes, usersRes] = await Promise.all([
+      const [courseRes, projectsRes] = await Promise.all([
         api.get(`/courses/${id}`),
         api.get('/projects'),
-        api.get('/users'),
       ]);
 
       const course = courseRes.data;
-      const employeeUsers = (usersRes.data || []).filter((u) => u.roles?.includes('EMPLOYEE'));
+      const projectItems = Array.isArray(projectsRes.data)
+        ? projectsRes.data
+        : Array.isArray(projectsRes.data?.data)
+        ? projectsRes.data.data
+        : [];
 
-      setProjects(projectsRes.data || []);
-      setUsers(employeeUsers);
+      setProjects(projectItems);
 
       setForm({
-        name: course.name || '',
+        title: course.name || '',
+        operationalProjectId: course.operationalProjectId || course.operationalProject?.id || '',
+        locationType: course.locationType || '',
         city: course.city || '',
         startDate: course.startDate ? formatDateForApi(new Date(course.startDate)) : '',
         endDate: course.endDate ? formatDateForApi(new Date(course.endDate)) : '',
-        numTrainees: course.numTrainees ?? '',
-        operationalProjectId: course.operationalProjectId || course.operationalProject?.id || '',
-        primaryEmployeeId: course.primaryEmployeeId || course.primaryEmployee?.id || '',
+        traineesCount:
+          course.numTrainees === null || course.numTrainees === undefined
+            ? ''
+            : String(course.numTrainees),
         requiresAdvance: !!course.requiresAdvance,
-        requiresRevenue: !!course.requiresRevenue,
-        materialsIssued: !!course.materialsIssued,
         requiresAdvanceSettlement: !!course.requiresAdvanceSettlement,
-        requiresSupervisorCompensation: !!course.requiresSupervisorCompensation,
+        requiresMaterialReturn: !!course.materialsIssued,
+        requiresCoordinatorCompensation: !!course.requiresSupervisorCompensation,
         requiresTrainerCompensation: !!course.requiresTrainerCompensation,
       });
     } catch (err) {
@@ -162,13 +170,6 @@ export default function EditCoursePage() {
     setForm((prev) => ({
       ...prev,
       [key]: value,
-    }));
-  };
-
-  const handleCheckboxChange = (key, checked) => {
-    setForm((prev) => ({
-      ...prev,
-      [key]: checked,
     }));
   };
 
@@ -197,6 +198,25 @@ export default function EditCoursePage() {
     setIsDatePickerOpen(false);
   };
 
+  const normalizePayload = () => {
+    return {
+      name: form.title.trim(),
+      city: form.city.trim(),
+      locationType: form.locationType,
+      startDate: form.startDate,
+      endDate: form.endDate,
+      numTrainees: Number(form.traineesCount),
+      operationalProjectId: form.operationalProjectId,
+      courseType: form.locationType,
+      requiresAdvance: form.requiresAdvance,
+      requiresRevenue: false,
+      materialsIssued: form.requiresMaterialReturn,
+      requiresAdvanceSettlement: form.requiresAdvanceSettlement,
+      requiresSupervisorCompensation: form.requiresCoordinatorCompensation,
+      requiresTrainerCompensation: form.requiresTrainerCompensation,
+    };
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -212,25 +232,9 @@ export default function EditCoursePage() {
 
     try {
       setSaving(true);
-
-      await api.put(`/courses/${id}`, {
-        name: form.name.trim(),
-        city: form.city.trim(),
-        startDate: form.startDate,
-        endDate: form.endDate,
-        numTrainees: Number(form.numTrainees),
-        operationalProjectId: form.operationalProjectId,
-        primaryEmployeeId: form.primaryEmployeeId,
-        requiresAdvance: form.requiresAdvance,
-        requiresRevenue: form.requiresRevenue,
-        materialsIssued: form.materialsIssued,
-        requiresAdvanceSettlement: form.requiresAdvanceSettlement,
-        requiresSupervisorCompensation: form.requiresSupervisorCompensation,
-        requiresTrainerCompensation: form.requiresTrainerCompensation,
-      });
-
+      await api.put(`/courses/${id}`, normalizePayload());
       toast.success('تم تعديل الدورة بنجاح');
-      router.push('/courses');
+      router.push(`/courses/${id}`);
     } catch (err) {
       toast.error(err.response?.data?.message || 'فشل في تعديل الدورة');
     } finally {
@@ -252,7 +256,6 @@ export default function EditCoursePage() {
         <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 lg:px-8">
           <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h1 className="text-2xl font-bold text-slate-900">تعديل الدورة</h1>
-            <p className="mt-2 text-sm text-slate-500">عدّل بيانات الدورة ثم احفظ التغييرات</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -265,10 +268,18 @@ export default function EditCoursePage() {
                 <Field
                   label="عنوان الدورة"
                   required
-                  value={form.name}
-                  onChange={(value) => handleChange('name', value)}
+                  value={form.title}
+                  onChange={(value) => handleChange('title', value)}
                   placeholder="مثال: التفتيش الأمني"
                   className="md:col-span-2"
+                />
+
+                <SelectField
+                  label="مقر التنفيذ"
+                  required
+                  value={form.locationType}
+                  onChange={(value) => handleChange('locationType', value)}
+                  options={locationTypeOptions}
                 />
 
                 <Field
@@ -295,8 +306,8 @@ export default function EditCoursePage() {
                   required
                   type="number"
                   min="1"
-                  value={form.numTrainees}
-                  onChange={(value) => handleChange('numTrainees', value)}
+                  value={form.traineesCount}
+                  onChange={(value) => handleChange('traineesCount', value)}
                   placeholder="مثال: 25"
                 />
 
@@ -310,60 +321,42 @@ export default function EditCoursePage() {
                     label: project.name,
                   }))}
                 />
-
-                <SelectField
-                  label="الموظف المسؤول"
-                  required
-                  value={form.primaryEmployeeId}
-                  onChange={(value) => handleChange('primaryEmployeeId', value)}
-                  options={users.map((user) => ({
-                    value: user.id,
-                    label: `${user.firstName} ${user.lastName}`,
-                  }))}
-                />
               </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="mb-5">
                 <h2 className="text-lg font-bold text-slate-900">الإعدادات التشغيلية</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  هذه الخيارات تتحكم في العناصر التشغيلية المشروطة داخل الدورة
-                </p>
               </div>
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <CheckboxField
                   label="يتطلب سلفة"
                   checked={form.requiresAdvance}
-                  onChange={(checked) => handleCheckboxChange('requiresAdvance', checked)}
-                />
-
-                <CheckboxField
-                  label="يتطلب إيرادات"
-                  checked={form.requiresRevenue}
-                  onChange={(checked) => handleCheckboxChange('requiresRevenue', checked)}
-                />
-
-                <CheckboxField
-                  label="تم صرف مواد"
-                  checked={form.materialsIssued}
-                  onChange={(checked) => handleCheckboxChange('materialsIssued', checked)}
+                  onChange={(checked) => handleChange('requiresAdvance', checked)}
                 />
 
                 <CheckboxField
                   label="يتطلب تسوية سلفة"
                   checked={form.requiresAdvanceSettlement}
                   onChange={(checked) =>
-                    handleCheckboxChange('requiresAdvanceSettlement', checked)
+                    handleChange('requiresAdvanceSettlement', checked)
                   }
                 />
 
                 <CheckboxField
-                  label="يتطلب مستحقات مشرف"
-                  checked={form.requiresSupervisorCompensation}
+                  label="يتطلب إعادة مواد تدريبية"
+                  checked={form.requiresMaterialReturn}
                   onChange={(checked) =>
-                    handleCheckboxChange('requiresSupervisorCompensation', checked)
+                    handleChange('requiresMaterialReturn', checked)
+                  }
+                />
+
+                <CheckboxField
+                  label="يتطلب مستحقات منسق"
+                  checked={form.requiresCoordinatorCompensation}
+                  onChange={(checked) =>
+                    handleChange('requiresCoordinatorCompensation', checked)
                   }
                 />
 
@@ -371,7 +364,7 @@ export default function EditCoursePage() {
                   label="يتطلب مستحقات مدرب"
                   checked={form.requiresTrainerCompensation}
                   onChange={(checked) =>
-                    handleCheckboxChange('requiresTrainerCompensation', checked)
+                    handleChange('requiresTrainerCompensation', checked)
                   }
                 />
               </div>
@@ -456,7 +449,7 @@ function SelectField({
         className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-100"
       >
         <option value="">
-          {label === 'المشروع التشغيلي' ? 'اختر المشروع التشغيلي' : 'اختر الموظف المسؤول'}
+          {label === 'المشروع التشغيلي' ? 'اختر المشروع التشغيلي' : 'اختر مقر التنفيذ'}
         </option>
 
         {options.map((option) => (
