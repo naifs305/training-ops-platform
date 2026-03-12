@@ -121,6 +121,66 @@ export class SubmitReportDto {
   program_evaluation: ReportSectionDto;
 
   @IsOptional()
+  @Transform(({ value }) =>
+    value === null || value === undefined || value === '' ? undefined : Number(value),
+  )
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  registered_trainees_count?: number;
+
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === null || value === undefined || value === '' ? undefined : Number(value),
+  )
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  actual_attendance_count?: number;
+
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === null || value === undefined || value === '' ? undefined : Number(value),
+  )
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  trainers_count?: number;
+
+  @IsOptional()
+  @Transform(({ value }) =>
+    value === null || value === undefined || value === '' ? undefined : Number(value),
+  )
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  translators_count?: number;
+
+  @IsOptional()
+  @IsString()
+  attendance_rate?: string;
+
+  @IsOptional()
+  @IsString()
+  venue_evaluation?: string;
+
+  @IsOptional()
+  @IsString()
+  logistics_items?: string;
+
+  @IsOptional()
+  @IsString()
+  positives?: string;
+
+  @IsOptional()
+  @IsString()
+  negatives?: string;
+
+  @IsOptional()
+  @IsString()
+  recommendations?: string;
+
+  @IsOptional()
   @IsString()
   other_notes?: string;
 
