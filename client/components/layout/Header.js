@@ -7,6 +7,7 @@ import RoleSwitcher from './RoleSwitcher';
 export default function Header() {
   const { user, logout, activeRole } = useAuth();
   const [notifCount, setNotifCount] = useState(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const loadNotifications = async () => {
     try {
@@ -14,7 +15,7 @@ export default function Header() {
       const unread = (res.data || []).filter((n) => !n.isRead).length;
       setNotifCount(unread);
     } catch (error) {
-      console.error('Header notifications error - Header.js:17', error);
+      console.error('Header notifications error - Header.js:18', error);
     }
   };
 
@@ -30,53 +31,82 @@ export default function Header() {
     return () => clearInterval(interval);
   }, [user]);
 
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [activeRole]);
+
+  const quickLinks =
+    activeRole === 'MANAGER'
+      ? [
+          { href: '/approvals', label: 'الاعتمادات' },
+          { href: '/reports', label: 'التقارير' },
+          { href: '/archive', label: 'الأرشيف' },
+          { href: '/messages', label: 'المراسلات' },
+        ]
+      : [
+          { href: '/courses', label: 'الدورات' },
+          { href: '/reports', label: 'التقارير الميدانية' },
+          { href: '/archive', label: 'أرشيفي' },
+          { href: '/messages', label: 'المراسلات' },
+        ];
+
   return (
-    <header className="sticky top-0 z-10 h-20 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90">
-      <div className="flex h-full items-center justify-between px-4 md:px-6">
-        <div className="flex items-center gap-4">
-          <div className="hidden md:block">
-            <h2 className="text-2xl font-extrabold text-primary">
+    <header className="sticky top-0 z-20 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/90">
+      <div className="flex min-h-[72px] items-center justify-between gap-3 px-4 md:min-h-[80px] md:px-6">
+        <div className="flex min-w-0 items-center gap-3 md:gap-4">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-white text-text-main transition hover:border-primary hover:bg-primary-light hover:text-primary md:hidden"
+            aria-label="فتح القائمة"
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              {mobileMenuOpen ? (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              ) : (
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
+              )}
+            </svg>
+          </button>
+
+          <div className="min-w-0">
+            <h2 className="truncate text-lg font-extrabold text-primary md:text-2xl">
               نظام إقفال الدورات التدريبية
             </h2>
-            <p className="mt-1 text-xs text-text-soft">
+            <p className="mt-1 text-[11px] text-text-soft md:text-xs">
               {activeRole === 'MANAGER' ? 'وضع المدير' : 'وضع الموظف'}
             </p>
           </div>
 
-          {activeRole === 'MANAGER' && (
-            <nav className="hidden lg:flex items-center gap-2">
+          <nav className="hidden lg:flex items-center gap-2">
+            {quickLinks.map((link) => (
               <Link
-                href="/approvals"
+                key={link.href}
+                href={link.href}
                 className="rounded-xl border border-border bg-white px-3 py-1.5 text-sm font-medium text-text-main transition hover:border-primary hover:bg-primary-light hover:text-primary"
               >
-                الاعتمادات
+                {link.label}
               </Link>
-
-              <Link
-                href="/reports"
-                className="rounded-xl border border-border bg-white px-3 py-1.5 text-sm font-medium text-text-main transition hover:border-primary hover:bg-primary-light hover:text-primary"
-              >
-                التقارير
-              </Link>
-
-              <Link
-                href="/archive"
-                className="rounded-xl border border-border bg-white px-3 py-1.5 text-sm font-medium text-text-main transition hover:border-primary hover:bg-primary-light hover:text-primary"
-              >
-                الأرشيف
-              </Link>
-
-              <Link
-                href="/messages"
-                className="rounded-xl border border-border bg-white px-3 py-1.5 text-sm font-medium text-text-main transition hover:border-primary hover:bg-primary-light hover:text-primary"
-              >
-                المراسلات
-              </Link>
-            </nav>
-          )}
+            ))}
+          </nav>
         </div>
 
-        <div className="flex items-center space-x-4 space-x-reverse">
+        <div className="flex items-center gap-2 md:gap-4">
           <Link href="/notifications">
             <div className="relative cursor-pointer rounded-xl border border-border bg-white p-2 transition hover:border-primary hover:bg-primary-light">
               <svg
@@ -104,11 +134,11 @@ export default function Header() {
           {user && user.roles.length > 1 && <RoleSwitcher />}
 
           {user && (
-            <div className="hidden md:flex flex-col items-end">
-              <span className="text-sm font-semibold text-text-main">
+            <div className="hidden md:flex max-w-[240px] flex-col items-end">
+              <span className="truncate text-sm font-semibold text-text-main">
                 {user.firstName} {user.lastName}
               </span>
-              <span className="text-xs text-text-soft">{user.email}</span>
+              <span className="truncate text-xs text-text-soft">{user.email}</span>
             </div>
           )}
 
@@ -120,6 +150,32 @@ export default function Header() {
           </button>
         </div>
       </div>
+
+      {mobileMenuOpen && (
+        <div className="border-t border-border bg-white px-4 py-4 md:hidden">
+          <div className="space-y-2">
+            {quickLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setMobileMenuOpen(false)}
+                className="block rounded-2xl border border-border bg-background px-4 py-3 text-sm font-bold text-text-main transition hover:border-primary hover:bg-primary-light hover:text-primary"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
+
+          {user && (
+            <div className="mt-4 rounded-2xl border border-border bg-background px-4 py-3">
+              <div className="text-sm font-bold text-text-main">
+                {user.firstName} {user.lastName}
+              </div>
+              <div className="mt-1 break-all text-xs text-text-soft">{user.email}</div>
+            </div>
+          )}
+        </div>
+      )}
     </header>
   );
 }
