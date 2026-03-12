@@ -23,6 +23,15 @@ function formatPercent(value) {
   return `${num.toFixed(2)}%`;
 }
 
+function isCourseEndedAndNotClosed(course) {
+  if (!course?.endDate) return false;
+
+  const endDate = new Date(course.endDate);
+  const now = new Date();
+
+  return endDate < now && !['CLOSED', 'ARCHIVED'].includes(course.status);
+}
+
 export default function Home() {
   const router = useRouter();
   const { user, activeRole, loading } = useAuth();
@@ -34,6 +43,9 @@ export default function Home() {
   const [employeeCourses, setEmployeeCourses] = useState([]);
   const [employeeKpi, setEmployeeKpi] = useState(null);
   const [employeeLoading, setEmployeeLoading] = useState(false);
+
+  const [managerCourses, setManagerCourses] = useState([]);
+  const [managerCoursesLoading, setManagerCoursesLoading] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -68,6 +80,20 @@ export default function Home() {
       .then((res) => setKpiRows(res.data || []))
       .catch(() => setKpiRows([]))
       .finally(() => setKpiLoading(false));
+  }, [activeRole]);
+
+  useEffect(() => {
+    if (activeRole !== 'MANAGER') return;
+
+    setManagerCoursesLoading(true);
+    api
+      .get('/courses')
+      .then((res) => {
+        const rows = Array.isArray(res.data) ? res.data : [];
+        setManagerCourses(rows);
+      })
+      .catch(() => setManagerCourses([]))
+      .finally(() => setManagerCoursesLoading(false));
   }, [activeRole]);
 
   useEffect(() => {
@@ -113,9 +139,11 @@ export default function Home() {
       )
     : '0.00';
 
-  const totalCoverageGap = kpiRows?.reduce(
-    (sum, item) => sum + Number(item.missingCoursesCount || 0),
-    0,
+  const managerPendingApprovalElements = Number(stats?.pendingApprovals || 0);
+
+  const managerEndedNotClosedCourses = useMemo(
+    () => managerCourses.filter((course) => isCourseEndedAndNotClosed(course)),
+    [managerCourses],
   );
 
   const employeeClosedCourses = useMemo(
@@ -207,15 +235,15 @@ export default function Home() {
                 </div>
               </Link>
 
-              <Link href="/kpis">
+              <Link href="/approvals">
                 <div className="cursor-pointer">
-                  <KPICard title="متوسط درجة الأداء" value={averageScore} />
+                  <KPICard title="العناصر بانتظار الاعتماد" value={managerPendingApprovalElements} color="yellow" />
                 </div>
               </Link>
 
-              <Link href="/kpis">
+              <Link href="/courses">
                 <div className="cursor-pointer">
-                  <KPICard title="فجوة التسجيل" value={totalCoverageGap || 0} />
+                  <KPICard title="دورات منتهية لم تغلق" value={managerEndedNotClosedCourses.length} color="red" />
                 </div>
               </Link>
 
@@ -301,8 +329,8 @@ export default function Home() {
                     </div>
 
                     <div className="flex items-center justify-between rounded-2xl border border-border bg-background px-4 py-3">
-                      <span className="text-sm text-text-soft">فجوة التسجيل</span>
-                      <span className="text-sm font-extrabold text-danger">{totalCoverageGap || 0}</span>
+                      <span className="text-sm text-text-soft">الدورات المنتهية غير المغلقة</span>
+                      <span className="text-sm font-extrabold text-danger">{managerEndedNotClosedCourses.length}</span>
                     </div>
                   </div>
                 )}
@@ -311,17 +339,51 @@ export default function Home() {
               <div className="rounded-2xl border border-danger/20 bg-white p-6 shadow-card">
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="font-extrabold text-danger">
-                    الاعتمادات المعلقة ({stats.pendingApprovals})
+                    الاعتمادات المعلقة ({managerPendingApprovalElements})
                   </h3>
                   <Link href="/approvals" className="text-sm font-bold text-primary hover:text-primary-dark">
                     عرض الكل
                   </Link>
                 </div>
                 <div className="rounded-2xl border border-danger/10 bg-red-50 px-4 py-4 text-sm leading-7 text-danger">
-                  يوجد {stats.pendingApprovals} عنصر بانتظار اعتمادك الآن. مراجعة هذه العناصر أولًا تضمن
+                  يوجد {managerPendingApprovalElements} عنصر بانتظار اعتمادك الآن. مراجعة هذه العناصر أولًا تضمن
                   عدم تعطّل الإقفالات وتأخر الفرق التشغيلية.
                 </div>
+
+                <div className="mt-4 rounded-2xl border border-border bg-background px-4 py-4 text-sm leading-7 text-text-soft">
+                  {managerCoursesLoading
+                    ? 'جاري تحميل الدورات المنتهية غير المغلقة...'
+                    : `يوجد ${managerEndedNotClosedCourses.length} دورة انتهى تاريخها ولم تغلق بعد.`}
+                </div>
               </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-white p-6 shadow-card">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="font-extrabold text-primary">الدورات المنتهية ولم تغلق بعد</h3>
+                <Link href="/courses" className="text-sm font-bold text-primary hover:text-primary-dark">
+                  فتح إدارة الدورات
+                </Link>
+              </div>
+
+              {managerCoursesLoading ? (
+                <div className="text-sm text-text-soft">جاري تحميل البيانات...</div>
+              ) : managerEndedNotClosedCourses.length === 0 ? (
+                <div className="text-sm text-text-soft">لا توجد دورات منتهية غير مغلقة حاليًا</div>
+              ) : (
+                <div className="space-y-3">
+                  {managerEndedNotClosedCourses.slice(0, 6).map((course) => (
+                    <Link key={course.id} href={`/courses/${course.id}`}>
+                      <div className="cursor-pointer rounded-2xl border border-border bg-background px-4 py-3 transition hover:border-primary/30 hover:bg-primary-light/30">
+                        <div className="mb-1 text-sm font-extrabold text-text-main">{course.name || '-'}</div>
+                        <div className="text-xs text-text-soft">
+                          {formatDate(course.startDate)} — {formatDate(course.endDate)}
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
