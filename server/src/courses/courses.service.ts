@@ -99,12 +99,15 @@ export class CoursesService {
     return value ? 'NOT_STARTED' : 'NOT_APPLICABLE';
   }
 
-  private async refreshConditionalClosureElements(courseId: string, data: {
-    requiresAdvance?: boolean;
-    requiresAdvanceSettlement?: boolean;
-    requiresRevenue?: boolean;
-    materialsIssued?: boolean;
-  }) {
+  private async refreshConditionalClosureElements(
+    courseId: string,
+    data: {
+      requiresAdvance?: boolean;
+      requiresAdvanceSettlement?: boolean;
+      requiresRevenue?: boolean;
+      materialsIssued?: boolean;
+    },
+  ) {
     const keysToUpdate: { key: string; value?: boolean }[] = [
       { key: 'advance_req', value: data.requiresAdvance },
       { key: 'settlement', value: data.requiresAdvanceSettlement },
@@ -374,14 +377,6 @@ export class CoursesService {
 
       if (course.status !== 'PREPARATION') {
         throw new BadRequestException('لا يمكن حذف الدورة بعد انتقالها من مرحلة الإعداد');
-      }
-
-      const hasSubmittedElements = course.closureElements.some((el) =>
-        ['PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'RETURNED'].includes(el.status),
-      );
-
-      if (hasSubmittedElements) {
-        throw new BadRequestException('لا يمكن حذف الدورة بعد بدء العمل على عناصر الإغلاق');
       }
     }
 
