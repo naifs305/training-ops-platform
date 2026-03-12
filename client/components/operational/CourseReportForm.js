@@ -246,12 +246,7 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
     actual_attendance_count: '',
     trainers_count: '',
     translators_count: '',
-    venue_evaluation: '',
-    logistics_items: '',
-    positives: '',
-    negatives: '',
     recommendations: '',
-    other_notes: '',
     declarationConfirmed: false,
     attachments: [],
   });
@@ -277,7 +272,8 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
     const registered = Number(form.registered_trainees_count);
     const actual = Number(form.actual_attendance_count);
 
-    if (!registered || !actual || registered <= 0) return '';
+    if (!registered || Number.isNaN(registered) || registered <= 0) return '';
+    if (Number.isNaN(actual) || actual < 0) return '';
     return `${((actual / registered) * 100).toFixed(1)}%`;
   }, [form.registered_trainees_count, form.actual_attendance_count]);
 
@@ -406,13 +402,8 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
       }
     }
 
-    if (!form.registered_trainees_count || !form.actual_attendance_count) {
+    if (form.registered_trainees_count === '' || form.actual_attendance_count === '') {
       toast.error('أكمل بيانات المشاركة الأساسية');
-      return false;
-    }
-
-    if (!form.venue_evaluation.trim()) {
-      toast.error('أدخل تقييم مقر التدريب');
       return false;
     }
 
@@ -544,32 +535,6 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
         </div>
       </div>
 
-      <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
-        <div className="mb-4">
-          <h4 className="text-base font-extrabold text-text-main">تقييم المرافق والخدمات</h4>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <TextField
-            label="تقييم مقر التدريب"
-            name="venue_evaluation"
-            value={form.venue_evaluation}
-            onChange={handleChange}
-            placeholder="مثال: جيد"
-            required
-          />
-
-          <TextAreaField
-            label="التجهيزات اللوجستية"
-            name="logistics_items"
-            value={form.logistics_items}
-            onChange={handleChange}
-            placeholder="مثال: ملفات - نوت - أقلام - سبورة - أوراق"
-            minHeight="96px"
-          />
-        </div>
-      </div>
-
       <Section
         title="تقييم البيئة التدريبية"
         name="training_environment"
@@ -616,48 +581,6 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
       />
 
       <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
-        <div className="mb-4">
-          <h4 className="text-base font-extrabold text-text-main">الإيجابيات والملاحظات المميزة</h4>
-        </div>
-        <TextAreaField
-          label="اكتب كل نقطة في سطر مستقل"
-          name="positives"
-          value={form.positives}
-          onChange={handleChange}
-          placeholder={'مثال:\nقرب القاعات\nالالتزام وانضباط المتدربين'}
-          minHeight="120px"
-        />
-      </div>
-
-      <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
-        <div className="mb-4">
-          <h4 className="text-base font-extrabold text-text-main">السلبيات والتحديات</h4>
-        </div>
-        <TextAreaField
-          label="اكتب كل نقطة في سطر مستقل"
-          name="negatives"
-          value={form.negatives}
-          onChange={handleChange}
-          placeholder={'مثال:\nوجود القاعة في نفس دور المطعم'}
-          minHeight="120px"
-        />
-      </div>
-
-      <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
-        <div className="mb-4">
-          <h4 className="text-base font-extrabold text-text-main">التوصيات والمقترحات</h4>
-        </div>
-        <TextAreaField
-          label="اكتب كل نقطة في سطر مستقل"
-          name="recommendations"
-          value={form.recommendations}
-          onChange={handleChange}
-          placeholder={'مثال:\nزيارة لفنادق أخرى للتأكد من توفير كافة الاحتياجات التدريبية'}
-          minHeight="120px"
-        />
-      </div>
-
-      <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
         <div className="mb-3">
           <label className="mb-1 block text-sm font-extrabold text-text-main">الصور الداعمة</label>
           <div className="text-xs text-text-soft">
@@ -692,13 +615,16 @@ export default function CourseReportForm({ trackingId, onClose, onSuccess, cours
       </div>
 
       <div className="rounded-3xl border border-border bg-white p-5 shadow-card">
-        <label className="mb-2 block text-sm font-extrabold text-text-main">ملاحظات إضافية عامة</label>
-        <textarea
-          name="other_notes"
-          value={form.other_notes}
+        <div className="mb-4">
+          <h4 className="text-base font-extrabold text-text-main">التوصيات والمقترحات</h4>
+        </div>
+        <TextAreaField
+          label="اكتب هنا التوصيات أو المقترحات أو ما ينبغي رفعه للإدارة"
+          name="recommendations"
+          value={form.recommendations}
           onChange={handleChange}
-          className="min-h-[130px] w-full rounded-2xl border border-border bg-white p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
-          placeholder="اكتب هنا أي ملاحظات تشغيلية إضافية، أو توصيات للتحسين، أو تنبيهات ينبغي رفعها للإدارة"
+          placeholder="اكتب هنا التوصيات والمقترحات"
+          minHeight="130px"
         />
       </div>
 
