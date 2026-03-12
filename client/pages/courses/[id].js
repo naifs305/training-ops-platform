@@ -142,7 +142,10 @@ export default function CourseDetail() {
   const isEmployee = activeRole === 'EMPLOYEE';
 
   const renderAction = (el) => {
-    if (el.status === 'APPROVED' && el.element.key === 'report') {
+    if (
+      el.element.key === 'report' &&
+      (el.status === 'PENDING_APPROVAL' || el.status === 'APPROVED')
+    ) {
       return (
         <button
           onClick={() => handleReportDownload(el.id)}
