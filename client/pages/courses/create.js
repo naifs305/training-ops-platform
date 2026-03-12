@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import DatePicker from 'react-datepicker';
 import MainLayout from '../../components/layout/MainLayout';
@@ -35,13 +35,8 @@ function formatDateForApi(date) {
   return `${year}-${month}-${day}`;
 }
 
-function formatDateForDisplay(dateString) {
-  if (!dateString) return '';
-  return dateString;
-}
-
 const DateRangeInput = forwardRef(function DateRangeInput(
-  { startDate, endDate, onClick, onClear },
+  { startDate, endDate, onClear, onClick },
   ref,
 ) {
   return (
@@ -60,14 +55,14 @@ const DateRangeInput = forwardRef(function DateRangeInput(
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div className="mb-1 text-xs font-medium text-slate-500">تاريخ البداية</div>
                 <div className="truncate text-sm font-semibold text-slate-900">
-                  {startDate ? formatDateForDisplay(startDate) : 'اختر تاريخ البداية'}
+                  {startDate || 'اختر تاريخ البداية'}
                 </div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div className="mb-1 text-xs font-medium text-slate-500">تاريخ النهاية</div>
                 <div className="truncate text-sm font-semibold text-slate-900">
-                  {endDate ? formatDateForDisplay(endDate) : 'اختر تاريخ النهاية'}
+                  {endDate || 'اختر تاريخ النهاية'}
                 </div>
               </div>
             </div>
@@ -103,7 +98,6 @@ const DateRangeInput = forwardRef(function DateRangeInput(
 export default function CreateCoursePage() {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const pickerRef = useRef(null);
 
   const [form, setForm] = useState(initialForm);
   const [projects, setProjects] = useState([]);
@@ -135,7 +129,7 @@ export default function CreateCoursePage() {
           }));
         }
       } catch (error) {
-        console.error('Failed to load projects: - create.js:138', error);
+        console.error('Failed to load projects: - create.js:132', error);
         toast.error('تعذر تحميل المشاريع التشغيلية');
       } finally {
         setIsLoadingProjects(false);
@@ -176,7 +170,9 @@ export default function CreateCoursePage() {
     }));
 
     if (start && end) {
-      setIsDatePickerOpen(false);
+      setTimeout(() => {
+        setIsDatePickerOpen(false);
+      }, 50);
     }
   };
 
@@ -186,6 +182,7 @@ export default function CreateCoursePage() {
       startDate: '',
       endDate: '',
     }));
+    setIsDatePickerOpen(false);
   };
 
   const normalizePayload = () => {
@@ -241,7 +238,7 @@ export default function CreateCoursePage() {
 
       router.push('/courses');
     } catch (error) {
-      console.error('Create course failed: - create.js:244', error);
+      console.error('Create course failed: - create.js:241', error);
       toast.error(error?.response?.data?.message || 'تعذر إنشاء الدورة');
     } finally {
       setIsSubmitting(false);
@@ -299,7 +296,6 @@ export default function CreateCoursePage() {
                 />
 
                 <DateRangeField
-                  pickerRef={pickerRef}
                   startDate={startDateObj}
                   endDate={endDateObj}
                   startDateValue={form.startDate}
@@ -476,7 +472,6 @@ function SelectField({
 }
 
 function DateRangeField({
-  pickerRef,
   startDate,
   endDate,
   startDateValue,
@@ -494,7 +489,6 @@ function DateRangeField({
       </span>
 
       <DatePicker
-        ref={pickerRef}
         selected={startDate}
         onChange={onChange}
         startDate={startDate}
@@ -503,18 +497,13 @@ function DateRangeField({
         open={isOpen}
         onInputClick={() => setIsOpen(true)}
         onClickOutside={() => setIsOpen(false)}
-        onSelect={() => {
-          if (startDate && endDate) {
-            setIsOpen(false);
-          }
-        }}
         shouldCloseOnSelect={false}
         monthsShown={2}
+        popperPlacement="bottom-start"
         dateFormat="yyyy-MM-dd"
         placeholderText="اختر تاريخ البداية والنهاية"
-        calendarClassName="border border-slate-200 shadow-xl"
+        calendarClassName="border border-slate-200 rounded-xl shadow-xl"
         wrapperClassName="w-full"
-        withPortal
         customInput={
           <DateRangeInput
             startDate={startDateValue}
