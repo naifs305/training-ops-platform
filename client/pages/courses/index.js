@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import useAuth from '../../context/AuthContext';
 import api from '../../lib/axios';
@@ -67,6 +67,7 @@ function ArchiveIcon() {
 export default function Courses() {
   const router = useRouter();
   const { activeRole } = useAuth();
+
   const [courses, setCourses] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -75,55 +76,81 @@ export default function Courses() {
   const [actionLoadingId, setActionLoadingId] = useState(null);
 
   useEffect(() => {
-    if (router.isReady) {
-      setFilters((prev) => ({
-        ...prev,
-        status: router.query.status || '',
-      }));
-    }
+    if (!router.isReady) return;
+
+    setFilters((prev) => ({
+      ...prev,
+      status: router.query.status || '',
+    }));
   }, [router.isReady, router.query.status]);
 
-  useEffect(() => {
-    fetchCourses();
-    if (activeRole === 'MANAGER') {
-      fetchUsers();
-    }
-  }, [filters, activeRole]);
-
-  const fetchCourses = async () => {
+  const fetchCourses = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (filters.status) params.append('status', filters.status);
+      const res = await api.get('/courses', {
+        params: {
+          ...(filters.status ? { status: filters.status } : {}),
+          _t: Date.now(),
+        },
+        headers: {
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      });
 
-      const res = await api.get(`/courses?${params.toString()}`);
-      setCourses(res.data.filter((c) => c.status !== 'ARCHIVED'));
+      const rows = Array.isArray(res.data) ? res.data : [];
+      setCourses(rows.filter((c) => c.status !== 'ARCHIVED'));
     } catch (err) {
       console.error(err);
       toast.error('تعذر تحميل الدورات');
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters.status]);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
-      const res = await api.get('/users');
-      setUsers(res.data.filter((u) => u.roles?.includes('EMPLOYEE')));
+      const res = await api.get('/users', {
+        params: { _t: Date.now() },
+      });
+
+      const rows = Array.isArray(res.data) ? res.data : [];
+      setUsers(rows.filter((u) => u.roles?.includes('EMPLOYEE')));
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    fetchCourses();
+  }, [router.isReady, router.asPath, fetchCourses]);
+
+  useEffect(() => {
+    if (activeRole === 'MANAGER') {
+      fetchUsers();
+    }
+  }, [activeRole, fetchUsers]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchCourses();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [fetchCourses]);
 
   const handleArchive = async (id) => {
     if (!confirm('هل أنت متأكد من أرشفة هذه الدورة؟')) return;
+
     try {
       setActionLoadingId(id);
       await api.put(`/courses/${id}/archive`);
       toast.success('تمت الأرشفة');
-      fetchCourses();
+      await fetchCourses();
     } catch (e) {
-      toast.error('فشل في الأرشفة');
+      toast.error(e.response?.data?.message || 'فشل في الأرشفة');
     } finally {
       setActionLoadingId(null);
     }
@@ -131,11 +158,12 @@ export default function Courses() {
 
   const handleDelete = async (id) => {
     if (!confirm('هل أنت متأكد من حذف هذه الدورة؟')) return;
+
     try {
       setActionLoadingId(id);
       await api.delete(`/courses/${id}`);
       toast.success('تم حذف الدورة');
-      fetchCourses();
+      await fetchCourses();
     } catch (e) {
       toast.error(e.response?.data?.message || 'فشل في حذف الدورة');
     } finally {
@@ -145,6 +173,7 @@ export default function Courses() {
 
   const handleReassign = async (courseId) => {
     const primaryEmployeeId = reassignSelections[courseId];
+
     if (!primaryEmployeeId) {
       toast.error('اختر الموظف أولًا');
       return;
@@ -154,7 +183,7 @@ export default function Courses() {
       setActionLoadingId(courseId);
       await api.put(`/courses/${courseId}/reassign`, { primaryEmployeeId });
       toast.success('تم نقل الدورة بنجاح');
-      fetchCourses();
+      await fetchCourses();
     } catch (e) {
       toast.error(e.response?.data?.message || 'فشل في نقل الدورة');
     } finally {
@@ -200,6 +229,20 @@ export default function Courses() {
     return classes[status] || 'bg-gray-100 text-text-soft';
   };
 
+  const formatDate = (value) => {
+    if (!value) return '-';
+    return new Date(value).toLocaleDateString('ar-SA');
+  };
+
+  const formatLocationType = (value) => {
+    const map = {
+      INTERNAL: 'داخلي',
+      EXTERNAL: 'خارجي',
+      REMOTE: 'عن بُعد',
+    };
+    return map[value] || value || 'غير محدد';
+  };
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -236,7 +279,7 @@ export default function Courses() {
           <select
             className="w-full rounded-2xl border border-border bg-white p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
             value={filters.status}
-            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+            onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
           >
             <option value="">كل الحالات</option>
             <option value="PREPARATION">قيد الإعداد</option>
@@ -261,7 +304,7 @@ export default function Courses() {
                   <div className="cursor-pointer p-6">
                     <div className="mb-5 flex items-start justify-between gap-3">
                       <h3 className="text-lg font-extrabold leading-8 text-text-main">
-                        {course.name}
+                        {course.name || '-'}
                       </h3>
 
                       <span
@@ -273,7 +316,7 @@ export default function Courses() {
 
                     <div className="space-y-3">
                       <div className="rounded-2xl bg-background px-4 py-3 text-sm text-text-soft">
-                        {course.beneficiaryEntity} - {course.city}
+                        {course.beneficiaryEntity || 'غير محدد'} - {course.city || 'غير محدد'}
                       </div>
 
                       <div className="text-sm text-text-main">
@@ -282,8 +325,13 @@ export default function Courses() {
                       </div>
 
                       <div className="text-sm text-text-soft">
+                        <span className="font-bold text-text-main">مقر التنفيذ:</span>{' '}
+                        {formatLocationType(course.locationType)}
+                      </div>
+
+                      <div className="text-sm text-text-soft">
                         <span className="font-bold text-text-main">تاريخ البداية:</span>{' '}
-                        {new Date(course.startDate).toLocaleDateString('ar-SA')}
+                        {formatDate(course.startDate)}
                       </div>
                     </div>
                   </div>
