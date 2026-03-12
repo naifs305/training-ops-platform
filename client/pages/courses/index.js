@@ -71,23 +71,40 @@ export default function Courses() {
   const [courses, setCourses] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ status: '', project: '' });
+  const [filters, setFilters] = useState({ status: '' });
   const [reassignSelections, setReassignSelections] = useState({});
   const [actionLoadingId, setActionLoadingId] = useState(null);
 
   useEffect(() => {
     if (!router.isReady) return;
 
-    setFilters((prev) => ({
-      ...prev,
+    setFilters({
       status: router.query.status || '',
-    }));
+    });
   }, [router.isReady, router.query.status]);
+
+  const fetchUsers = useCallback(async () => {
+    try {
+      const res = await api.get('/users', {
+        params: { _t: Date.now() },
+        headers: {
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      });
+
+      const rows = Array.isArray(res.data) ? res.data : [];
+      setUsers(rows.filter((u) => u.roles?.includes('EMPLOYEE')));
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
 
   const fetchCourses = useCallback(async () => {
     setLoading(true);
+
     try {
-      const res = await api.get('/courses', {
+      const listRes = await api.get('/courses', {
         params: {
           ...(filters.status ? { status: filters.status } : {}),
           _t: Date.now(),
@@ -98,8 +115,27 @@ export default function Courses() {
         },
       });
 
-      const rows = Array.isArray(res.data) ? res.data : [];
-      setCourses(rows.filter((c) => c.status !== 'ARCHIVED'));
+      const baseRows = Array.isArray(listRes.data) ? listRes.data : [];
+      const activeRows = baseRows.filter((c) => c.status !== 'ARCHIVED');
+
+      const hydratedRows = await Promise.all(
+        activeRows.map(async (course) => {
+          try {
+            const detailRes = await api.get(`/courses/${course.id}`, {
+              params: { _t: Date.now() },
+              headers: {
+                'Cache-Control': 'no-cache',
+                Pragma: 'no-cache',
+              },
+            });
+            return detailRes.data;
+          } catch {
+            return course;
+          }
+        }),
+      );
+
+      setCourses(hydratedRows);
     } catch (err) {
       console.error(err);
       toast.error('تعذر تحميل الدورات');
@@ -107,19 +143,6 @@ export default function Courses() {
       setLoading(false);
     }
   }, [filters.status]);
-
-  const fetchUsers = useCallback(async () => {
-    try {
-      const res = await api.get('/users', {
-        params: { _t: Date.now() },
-      });
-
-      const rows = Array.isArray(res.data) ? res.data : [];
-      setUsers(rows.filter((u) => u.roles?.includes('EMPLOYEE')));
-    } catch (err) {
-      console.error(err);
-    }
-  }, []);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -279,7 +302,7 @@ export default function Courses() {
           <select
             className="w-full rounded-2xl border border-border bg-white p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10"
             value={filters.status}
-            onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
+            onChange={(e) => setFilters({ status: e.target.value })}
           >
             <option value="">كل الحالات</option>
             <option value="PREPARATION">قيد الإعداد</option>

@@ -129,8 +129,16 @@ export default function EditCoursePage() {
       setLoading(true);
 
       const [courseRes, projectsRes] = await Promise.all([
-        api.get(`/courses/${id}`),
-        api.get('/projects'),
+        api.get(`/courses/${id}`, {
+          params: { _t: Date.now() },
+          headers: {
+            'Cache-Control': 'no-cache',
+            Pragma: 'no-cache',
+          },
+        }),
+        api.get('/projects', {
+          params: { _t: Date.now() },
+        }),
       ]);
 
       const course = courseRes.data;
@@ -232,9 +240,17 @@ export default function EditCoursePage() {
 
     try {
       setSaving(true);
-      await api.put(`/courses/${id}`, normalizePayload());
+
+      await api.put(`/courses/${id}`, normalizePayload(), {
+        headers: {
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      });
+
       toast.success('تم تعديل الدورة بنجاح');
-      router.push(`/courses/${id}`);
+
+      window.location.href = `/courses?refresh=${Date.now()}`;
     } catch (err) {
       toast.error(err.response?.data?.message || 'فشل في تعديل الدورة');
     } finally {
