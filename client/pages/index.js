@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import useAuth from '../context/AuthContext';
 import api from '../lib/axios';
@@ -12,17 +12,28 @@ function formatNumber(value) {
   return num.toFixed(2);
 }
 
+function formatDate(value) {
+  if (!value) return '-';
+  return new Date(value).toLocaleDateString('ar-SA');
+}
+
+function formatPercent(value) {
+  const num = Number(value);
+  if (Number.isNaN(num)) return '-';
+  return `${num.toFixed(2)}%`;
+}
+
 export default function Home() {
   const router = useRouter();
   const { user, activeRole, loading } = useAuth();
+
   const [stats, setStats] = useState(null);
   const [kpiRows, setKpiRows] = useState([]);
   const [kpiLoading, setKpiLoading] = useState(false);
-  const [employeeCourseStats, setEmployeeCourseStats] = useState({
-    total: 0,
-    open: 0,
-    closed: 0,
-  });
+
+  const [employeeCourses, setEmployeeCourses] = useState([]);
+  const [employeeKpi, setEmployeeKpi] = useState(null);
+  const [employeeLoading, setEmployeeLoading] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -31,13 +42,13 @@ export default function Home() {
   }, [loading, user, router]);
 
   useEffect(() => {
-    if (activeRole) {
-      const endpoint = activeRole === 'MANAGER' ? '/analytics/manager' : '/analytics/employee';
-      api
-        .get(endpoint)
-        .then((res) => setStats(res.data))
-        .catch(() => setStats(null));
-    }
+    if (!activeRole) return;
+
+    const endpoint = activeRole === 'MANAGER' ? '/analytics/manager' : '/analytics/employee';
+    api
+      .get(endpoint)
+      .then((res) => setStats(res.data))
+      .catch(() => setStats(null));
   }, [activeRole]);
 
   useEffect(() => {
@@ -60,30 +71,39 @@ export default function Home() {
   }, [activeRole]);
 
   useEffect(() => {
-    if (activeRole !== 'EMPLOYEE') return;
+    if (activeRole !== 'EMPLOYEE' || !user?.id) return;
 
-    api
-      .get('/courses')
-      .then((res) => {
-        const rows = Array.isArray(res.data) ? res.data : [];
-        const closedStatuses = ['CLOSED', 'ARCHIVED'];
-        const closed = rows.filter((course) => closedStatuses.includes(course.status)).length;
-        const open = rows.length - closed;
+    const now = new Date();
+    const periodLabel = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-        setEmployeeCourseStats({
-          total: rows.length,
-          open,
-          closed,
-        });
+    setEmployeeLoading(true);
+
+    Promise.all([
+      api.get('/courses'),
+      api.get('/kpis', {
+        params: {
+          periodType: 'MONTHLY',
+          periodLabel,
+        },
+      }),
+    ])
+      .then(([coursesRes, kpiRes]) => {
+        const courseRows = Array.isArray(coursesRes.data) ? coursesRes.data : [];
+        const kpiRowsData = Array.isArray(kpiRes.data) ? kpiRes.data : [];
+
+        setEmployeeCourses(courseRows);
+
+        const myKpi =
+          kpiRowsData.find((row) => row.user?.id === user.id || row.userId === user.id) || null;
+
+        setEmployeeKpi(myKpi);
       })
-      .catch(() =>
-        setEmployeeCourseStats({
-          total: 0,
-          open: 0,
-          closed: 0,
-        }),
-      );
-  }, [activeRole]);
+      .catch(() => {
+        setEmployeeCourses([]);
+        setEmployeeKpi(null);
+      })
+      .finally(() => setEmployeeLoading(false));
+  }, [activeRole, user]);
 
   if (loading) {
     return <div className="p-10 font-cairo text-text-main">جاري التحميل...</div>;
@@ -102,6 +122,28 @@ export default function Home() {
   const totalCoverageGap = kpiRows?.reduce(
     (sum, item) => sum + Number(item.missingCoursesCount || 0),
     0,
+  );
+
+  const employeeClosedCourses = useMemo(
+    () =>
+      employeeCourses.filter((course) => ['CLOSED', 'ARCHIVED'].includes(course.status)),
+    [employeeCourses],
+  );
+
+  const employeeOpenCourses = useMemo(
+    () =>
+      employeeCourses.filter((course) => !['CLOSED', 'ARCHIVED'].includes(course.status)),
+    [employeeCourses],
+  );
+
+  const employeePendingApprovalCourses = useMemo(
+    () =>
+      employeeCourses.filter((course) =>
+        Array.isArray(course.closureElements)
+          ? course.closureElements.some((el) => el.status === 'PENDING_APPROVAL')
+          : false,
+      ),
+    [employeeCourses],
   );
 
   return (
@@ -277,9 +319,10 @@ export default function Home() {
                     عرض الكل
                   </Link>
                 </div>
-                <p className="text-sm text-text-soft">
-                  يوجد {stats.pendingApprovals} عنصر بانتظار اعتمادك.
-                </p>
+                <div className="rounded-2xl border border-danger/10 bg-red-50 px-4 py-4 text-sm leading-7 text-danger">
+                  يوجد {stats.pendingApprovals} عنصر بانتظار اعتمادك الآن. مراجعة هذه العناصر أولًا تضمن
+                  عدم تعطّل الإقفالات وتأخر الفرق التشغيلية.
+                </div>
               </div>
             </div>
           </div>
@@ -288,88 +331,117 @@ export default function Home() {
         {activeRole === 'EMPLOYEE' && stats && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <Link href="/courses">
+              <Link href="/courses/create">
                 <div className="cursor-pointer">
-                  <KPICard title="إجمالي دوراتي" value={employeeCourseStats.total} color="primary" />
+                  <KPICard title="إضافة دورة جديدة" value="+" color="primary" />
                 </div>
               </Link>
 
               <Link href="/courses">
                 <div className="cursor-pointer">
-                  <KPICard title="الدورات غير المغلقة" value={employeeCourseStats.open} color="yellow" />
+                  <KPICard title="الدورات غير المنتهية" value={employeeOpenCourses.length} color="yellow" />
                 </div>
               </Link>
 
               <Link href="/archive">
                 <div className="cursor-pointer">
-                  <KPICard title="الدورات المغلقة" value={employeeCourseStats.closed} color="green" />
+                  <KPICard title="الدورات المنتهية" value={employeeClosedCourses.length} color="green" />
                 </div>
               </Link>
 
               <Link href="/courses">
                 <div className="cursor-pointer">
-                  <KPICard title="مهام متأخرة" value={stats.overdueItems} color="red" />
+                  <KPICard title="لم تعتمد بعد" value={employeePendingApprovalCourses.length} color="red" />
                 </div>
               </Link>
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <Link href="/courses/create">
-                <div className="cursor-pointer rounded-2xl border border-primary/20 bg-primary-light p-5 shadow-card transition hover:-translate-y-0.5 hover:border-primary hover:bg-primary/10">
-                  <div className="mb-2 text-lg font-extrabold text-primary">إضافة دورة جديدة</div>
-                  <div className="text-sm leading-7 text-text-soft">
-                    إنشاء دورة جديدة والبدء في متابعتها تشغيليًا من لوحة المعلومات مباشرة
-                  </div>
-                </div>
-              </Link>
-
-              <Link href="/courses">
-                <div className="cursor-pointer rounded-2xl border border-border bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-primary-light/30">
-                  <div className="mb-2 text-lg font-extrabold text-primary">إدارة الدورات</div>
-                  <div className="text-sm leading-7 text-text-soft">
-                    استعراض دوراتك المفتوحة ومتابعة العناصر التشغيلية لكل دورة
-                  </div>
-                </div>
-              </Link>
-
-              <Link href="/reports">
-                <div className="cursor-pointer rounded-2xl border border-border bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:border-primary/30 hover:bg-primary-light/30">
-                  <div className="mb-2 text-lg font-extrabold text-primary">التقارير الميدانية</div>
-                  <div className="text-sm leading-7 text-text-soft">
-                    استعراض جميع التقارير التي قدمتها وطباعة أي تقرير منها
-                  </div>
-                </div>
-              </Link>
+              <MetricCard
+                title="نسبة سرعة الإنجاز"
+                value={formatPercent(employeeKpi?.speedScore)}
+                subtitle="تعكس سرعة تنفيذك وإقفال العناصر خلال الفترة الحالية"
+              />
+              <MetricCard
+                title="نسبة الانضباط"
+                value={formatPercent(employeeKpi?.disciplineScore)}
+                subtitle="تعكس انتظامك وتقليل التأخر والعناصر المعلقة"
+              />
+              <MetricCard
+                title="أداء الموظف"
+                value={formatPercent(employeeKpi?.finalScore)}
+                subtitle="المحصلة العامة لأدائك بحسب مؤشرات المنصة"
+              />
             </div>
 
-            <div className="rounded-2xl border border-border bg-white p-6 shadow-card">
-              <h3 className="mb-4 text-lg font-extrabold text-text-main">الوصول السريع</h3>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <Link href="/courses/create">
-                  <div className="cursor-pointer rounded-2xl border border-border bg-background px-4 py-5 text-center transition hover:border-primary/30 hover:bg-primary-light/30">
-                    <div className="mb-2 font-extrabold text-primary">إضافة دورة</div>
-                    <div className="text-sm text-text-soft">بدء دورة جديدة</div>
-                  </div>
-                </Link>
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <CourseListCard
+                title="الدورات المنتهية"
+                items={employeeClosedCourses}
+                emptyText="لا توجد دورات منتهية حاليًا"
+              />
 
-                <Link href="/archive">
-                  <div className="cursor-pointer rounded-2xl border border-border bg-background px-4 py-5 text-center transition hover:border-primary/30 hover:bg-primary-light/30">
-                    <div className="mb-2 font-extrabold text-primary">أرشيفي</div>
-                    <div className="text-sm text-text-soft">الدورات المغلقة الخاصة بك</div>
-                  </div>
-                </Link>
+              <CourseListCard
+                title="الدورات غير المنتهية"
+                items={employeeOpenCourses}
+                emptyText="لا توجد دورات غير منتهية حاليًا"
+              />
 
-                <Link href="/messages">
-                  <div className="cursor-pointer rounded-2xl border border-border bg-background px-4 py-5 text-center transition hover:border-primary/30 hover:bg-primary-light/30">
-                    <div className="mb-2 font-extrabold text-primary">المراسلات</div>
-                    <div className="text-sm text-text-soft">الوصول إلى الرسائل</div>
-                  </div>
-                </Link>
+              <CourseListCard
+                title="الدورات التي لم تعتمد بعد"
+                items={employeePendingApprovalCourses}
+                emptyText="لا توجد دورات بانتظار الاعتماد حاليًا"
+              />
+            </div>
+
+            {employeeLoading && (
+              <div className="rounded-2xl border border-border bg-white p-4 text-sm text-text-soft shadow-card">
+                جاري تحميل بيانات لوحة المعلومات...
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>
     </MainLayout>
+  );
+}
+
+function MetricCard({ title, value, subtitle }) {
+  return (
+    <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
+      <div className="mb-2 text-sm font-bold text-text-soft">{title}</div>
+      <div className="mb-2 text-3xl font-extrabold text-primary">{value}</div>
+      <div className="text-sm leading-7 text-text-soft">{subtitle}</div>
+    </div>
+  );
+}
+
+function CourseListCard({ title, items, emptyText }) {
+  return (
+    <div className="rounded-2xl border border-border bg-white p-5 shadow-card">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-lg font-extrabold text-primary">{title}</h3>
+        <span className="rounded-full bg-primary-light px-3 py-1 text-xs font-bold text-primary">
+          {items.length}
+        </span>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="text-sm text-text-soft">{emptyText}</div>
+      ) : (
+        <div className="space-y-3">
+          {items.slice(0, 5).map((course) => (
+            <Link key={course.id} href={`/courses/${course.id}`}>
+              <div className="cursor-pointer rounded-2xl border border-border bg-background px-4 py-3 transition hover:border-primary/30 hover:bg-primary-light/30">
+                <div className="mb-1 text-sm font-extrabold text-text-main">{course.name || '-'}</div>
+                <div className="text-xs text-text-soft">
+                  {formatDate(course.startDate)} — {formatDate(course.endDate)}
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
