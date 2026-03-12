@@ -5,45 +5,109 @@ import api from '../lib/axios';
 
 export default function ReportsPage() {
   const { activeRole } = useAuth();
-  const [courses, setCourses] = useState([]);
-  const [projects, setProjects] = useState([]);
+
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [filters, setFilters] = useState({
     search: '',
-    projectId: '',
-    status: '',
-    city: '',
-    courseType: '',
+    presenter: '',
     locationType: '',
     startDateFrom: '',
     startDateTo: '',
-    requiresAdvance: '',
-    requiresRevenue: '',
-    requiresAdvanceSettlement: '',
-    requiresSupervisorCompensation: '',
-    requiresTrainerCompensation: '',
   });
 
   useEffect(() => {
-    if (activeRole === 'MANAGER') {
-      fetchData();
-    }
+    fetchData();
   }, [activeRole]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [coursesRes, projectsRes] = await Promise.all([
-        api.get('/courses'),
-        api.get('/projects'),
-      ]);
-      setCourses(coursesRes.data || []);
-      setProjects(projectsRes.data || []);
+
+      const coursesRes = await api.get('/courses', {
+        params: { _t: Date.now() },
+        headers: {
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      });
+
+      const courses = Array.isArray(coursesRes.data) ? coursesRes.data : [];
+
+      const reportRows = [];
+
+      for (const course of courses) {
+        try {
+          const detailRes = await api.get(`/courses/${course.id}`, {
+            params: { _t: Date.now() },
+            headers: {
+              'Cache-Control': 'no-cache',
+              Pragma: 'no-cache',
+            },
+          });
+
+          const detail = detailRes.data;
+          const closureElements = Array.isArray(detail?.closureElements)
+            ? detail.closureElements
+            : [];
+
+          const reportElements = closureElements.filter(
+            (el) =>
+              el.element?.key === 'report' &&
+              (el.status === 'PENDING_APPROVAL' || el.status === 'APPROVED'),
+          );
+
+          reportElements.forEach((el) => {
+            reportRows.push({
+              id: el.id,
+              courseId: detail.id,
+              courseName: detail.name || '-',
+              startDate: detail.startDate || null,
+              endDate: detail.endDate || null,
+              locationType: detail.locationType || '-',
+              presenterName:
+                detail.primaryEmployee?.firstName || detail.primaryEmployee?.lastName
+                  ? `${detail.primaryEmployee?.firstName || ''} ${detail.primaryEmployee?.lastName || ''}`.trim()
+                  : '-',
+              executionAt: el.executionAt || null,
+              status: el.status,
+            });
+          });
+        } catch (error) {
+          console.error(`Failed to load course details for ${course.id} - reports.js:78`, error);
+        }
+      }
+
+      setRows(reportRows);
     } catch (error) {
       console.error(error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePrint = async (trackingId) => {
+    try {
+      const res = await api.get(`/closure/${trackingId}/export`, {
+        responseType: 'text',
+        headers: {
+          Accept: 'text/html',
+        },
+      });
+
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert('تعذر فتح نافذة الطباعة. تأكد من السماح بالنوافذ المنبثقة.');
+        return;
+      }
+
+      printWindow.document.open();
+      printWindow.document.write(res.data);
+      printWindow.document.close();
+    } catch (error) {
+      console.error(error);
+      alert('تعذر فتح التقرير');
     }
   };
 
@@ -52,91 +116,14 @@ export default function ReportsPage() {
     setFilters((prev) => ({ ...prev, [name]: value }));
   };
 
-  const filteredCourses = useMemo(() => {
-    return courses.filter((course) => {
-      const matchesSearch =
-        !filters.search ||
-        course.name?.toLowerCase().includes(filters.search.toLowerCase()) ||
-        course.code?.toLowerCase().includes(filters.search.toLowerCase());
-
-      const matchesProject =
-        !filters.projectId || course.operationalProjectId === filters.projectId;
-
-      const matchesStatus = !filters.status || course.status === filters.status;
-
-      const matchesCity =
-        !filters.city ||
-        course.city?.toLowerCase().includes(filters.city.toLowerCase());
-
-      const matchesCourseType =
-        !filters.courseType || course.courseType === filters.courseType;
-
-      const matchesLocationType =
-        !filters.locationType ||
-        course.locationType?.toLowerCase().includes(filters.locationType.toLowerCase());
-
-      const matchesStartDateFrom =
-        !filters.startDateFrom ||
-        new Date(course.startDate) >= new Date(filters.startDateFrom);
-
-      const matchesStartDateTo =
-        !filters.startDateTo ||
-        new Date(course.startDate) <= new Date(filters.startDateTo);
-
-      const matchesRequiresAdvance =
-        filters.requiresAdvance === '' ||
-        String(course.requiresAdvance) === filters.requiresAdvance;
-
-      const matchesRequiresRevenue =
-        filters.requiresRevenue === '' ||
-        String(course.requiresRevenue) === filters.requiresRevenue;
-
-      const matchesRequiresAdvanceSettlement =
-        filters.requiresAdvanceSettlement === '' ||
-        String(course.requiresAdvanceSettlement) === filters.requiresAdvanceSettlement;
-
-      const matchesRequiresSupervisorCompensation =
-        filters.requiresSupervisorCompensation === '' ||
-        String(course.requiresSupervisorCompensation) === filters.requiresSupervisorCompensation;
-
-      const matchesRequiresTrainerCompensation =
-        filters.requiresTrainerCompensation === '' ||
-        String(course.requiresTrainerCompensation) === filters.requiresTrainerCompensation;
-
-      return (
-        matchesSearch &&
-        matchesProject &&
-        matchesStatus &&
-        matchesCity &&
-        matchesCourseType &&
-        matchesLocationType &&
-        matchesStartDateFrom &&
-        matchesStartDateTo &&
-        matchesRequiresAdvance &&
-        matchesRequiresRevenue &&
-        matchesRequiresAdvanceSettlement &&
-        matchesRequiresSupervisorCompensation &&
-        matchesRequiresTrainerCompensation
-      );
+  const resetFilters = () => {
+    setFilters({
+      search: '',
+      presenter: '',
+      locationType: '',
+      startDateFrom: '',
+      startDateTo: '',
     });
-  }, [courses, filters]);
-
-  const stats = useMemo(() => {
-    return {
-      total: filteredCourses.length,
-      preparation: filteredCourses.filter((c) => c.status === 'PREPARATION').length,
-      execution: filteredCourses.filter((c) => c.status === 'EXECUTION').length,
-      awaiting: filteredCourses.filter((c) => c.status === 'AWAITING_CLOSURE').length,
-      closed: filteredCourses.filter((c) => c.status === 'CLOSED').length,
-    };
-  }, [filteredCourses]);
-
-  const getProjectName = (course) => {
-    return (
-      course.operationalProject?.name ||
-      projects.find((p) => p.id === course.operationalProjectId)?.name ||
-      '-'
-    );
   };
 
   const formatDate = (date) => {
@@ -144,147 +131,56 @@ export default function ReportsPage() {
     return new Date(date).toLocaleDateString('ar-SA');
   };
 
-  const getStatusLabel = (status) => {
+  const formatLocationType = (value) => {
     const map = {
-      PREPARATION: 'قيد الإعداد',
-      EXECUTION: 'قيد التنفيذ',
-      AWAITING_CLOSURE: 'بانتظار الإغلاق',
-      CLOSED: 'مغلقة',
-      ARCHIVED: 'مؤرشفة',
+      INTERNAL: 'داخلي',
+      EXTERNAL: 'خارجي',
+      REMOTE: 'عن بُعد',
     };
-    return map[status] || status;
+    return map[value] || value || '-';
   };
 
-  const getBooleanLabel = (value) => (value ? 'نعم' : 'لا');
+  const presenterOptions = useMemo(() => {
+    return [...new Set(rows.map((row) => row.presenterName).filter(Boolean))];
+  }, [rows]);
 
-  const exportToExcel = async () => {
-    const XLSX = await import('xlsx');
+  const filteredRows = useMemo(() => {
+    return rows.filter((row) => {
+      const matchesSearch =
+        !filters.search ||
+        row.courseName?.toLowerCase().includes(filters.search.toLowerCase());
 
-    const data = filteredCourses.map((course) => ({
-      'اسم الدورة': course.name || '',
-      'الكود': course.code || '',
-      'المشروع': getProjectName(course),
-      'المدينة': course.city || '',
-      'مقر التنفيذ': course.locationType || '',
-      'نوع الدورة': course.courseType === 'internal' ? 'داخلية' : 'خارجية',
-      'الحالة': getStatusLabel(course.status),
-      'تاريخ البداية': formatDate(course.startDate),
-      'تاريخ النهاية': formatDate(course.endDate),
-      'عدد المتدربين': course.numTrainees || 0,
-      'يتطلب سلفة مالية': getBooleanLabel(course.requiresAdvance),
-      'يتطلب إيرادات': getBooleanLabel(course.requiresRevenue),
-      'يتطلب تسوية سلفة': getBooleanLabel(course.requiresAdvanceSettlement),
-      'يتطلب مستحقات مشرف': getBooleanLabel(course.requiresSupervisorCompensation),
-      'يتطلب مستحقات مدرب': getBooleanLabel(course.requiresTrainerCompensation),
-    }));
+      const matchesPresenter =
+        !filters.presenter || row.presenterName === filters.presenter;
 
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
+      const matchesLocationType =
+        !filters.locationType || row.locationType === filters.locationType;
 
-    worksheet['!cols'] = [
-      { wch: 28 },
-      { wch: 18 },
-      { wch: 22 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 14 },
-      { wch: 18 },
-      { wch: 16 },
-      { wch: 16 },
-      { wch: 14 },
-      { wch: 16 },
-      { wch: 14 },
-      { wch: 18 },
-      { wch: 18 },
-      { wch: 18 },
-    ];
+      const matchesStartDateFrom =
+        !filters.startDateFrom ||
+        (row.startDate && new Date(row.startDate) >= new Date(filters.startDateFrom));
 
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'التقارير');
-    XLSX.writeFile(workbook, 'training-operations-reports.xlsx');
-  };
+      const matchesStartDateTo =
+        !filters.startDateTo ||
+        (row.startDate && new Date(row.startDate) <= new Date(filters.startDateTo));
 
-  const exportToPDF = async () => {
-    const { default: jsPDF } = await import('jspdf');
-    const { default: autoTable } = await import('jspdf-autotable');
-
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
-    doc.setFontSize(16);
-    doc.text('Training Operations Reports', 14, 15);
-
-    const tableRows = filteredCourses.map((course) => [
-      course.name || '-',
-      course.code || '-',
-      getProjectName(course),
-      course.city || '-',
-      course.locationType || '-',
-      course.courseType === 'internal' ? 'Internal' : 'External',
-      getStatusLabel(course.status),
-      formatDate(course.startDate),
-      formatDate(course.endDate),
-      String(course.numTrainees || 0),
-    ]);
-
-    autoTable(doc, {
-      startY: 22,
-      head: [[
-        'Course Name',
-        'Code',
-        'Project',
-        'City',
-        'Location',
-        'Type',
-        'Status',
-        'Start Date',
-        'End Date',
-        'Trainees',
-      ]],
-      body: tableRows,
-      styles: {
-        fontSize: 8,
-        halign: 'center',
-        valign: 'middle',
-      },
-      headStyles: {
-        fillColor: [0, 108, 109],
-        textColor: 255,
-      },
-      alternateRowStyles: {
-        fillColor: [247, 247, 245],
-      },
-      margin: { top: 22, right: 10, bottom: 10, left: 10 },
+      return (
+        matchesSearch &&
+        matchesPresenter &&
+        matchesLocationType &&
+        matchesStartDateFrom &&
+        matchesStartDateTo
+      );
     });
+  }, [rows, filters]);
 
-    doc.save('training-operations-reports.pdf');
-  };
-
-  const resetFilters = () => {
-    setFilters({
-      search: '',
-      projectId: '',
-      status: '',
-      city: '',
-      courseType: '',
-      locationType: '',
-      startDateFrom: '',
-      startDateTo: '',
-      requiresAdvance: '',
-      requiresRevenue: '',
-      requiresAdvanceSettlement: '',
-      requiresSupervisorCompensation: '',
-      requiresTrainerCompensation: '',
-    });
-  };
-
-  if (activeRole !== 'MANAGER') {
-    return (
-      <MainLayout>
-        <div className="rounded-3xl border border-danger/20 bg-white p-6 text-danger shadow-card">
-          غير مصرح لك بالدخول إلى هذه الصفحة.
-        </div>
-      </MainLayout>
-    );
-  }
+  const stats = useMemo(() => {
+    return {
+      total: filteredRows.length,
+      approved: filteredRows.filter((row) => row.status === 'APPROVED').length,
+      pending: filteredRows.filter((row) => row.status === 'PENDING_APPROVAL').length,
+    };
+  }, [filteredRows]);
 
   const inputClass =
     'w-full rounded-2xl border border-border bg-white p-3 text-sm text-text-main outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10';
@@ -295,32 +191,20 @@ export default function ReportsPage() {
         <div className="rounded-3xl border border-border bg-white p-6 shadow-card">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h1 className="text-2xl font-extrabold text-primary">التقارير</h1>
-              <p className="mt-1 text-sm text-text-soft">تقارير تشغيلية متقدمة للدورات التدريبية</p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={exportToExcel}
-                className="rounded-2xl bg-primary px-4 py-2 text-sm font-bold text-white transition hover:bg-primary-dark"
-              >
-                تصدير Excel
-              </button>
-              <button
-                onClick={exportToPDF}
-                className="rounded-2xl bg-accent px-4 py-2 text-sm font-bold text-white transition hover:opacity-90"
-              >
-                تصدير PDF
-              </button>
+              <h1 className="text-2xl font-extrabold text-primary">التقارير الميدانية</h1>
+              <p className="mt-1 text-sm text-text-soft">
+                {activeRole === 'MANAGER'
+                  ? 'عرض جميع التقارير الميدانية المقدمة من المستخدمين'
+                  : 'عرض جميع التقارير الميدانية التي قدمتها'}
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <StatCard title="إجمالي النتائج" value={stats.total} />
-          <StatCard title="قيد الإعداد" value={stats.preparation} />
-          <StatCard title="قيد التنفيذ" value={stats.execution} />
-          <StatCard title="بانتظار الإغلاق" value={stats.awaiting} />
-          <StatCard title="مغلقة" value={stats.closed} />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StatCard title="إجمالي التقارير" value={stats.total} />
+          <StatCard title="تقارير معتمدة" value={stats.approved} />
+          <StatCard title="تقارير بانتظار الاعتماد" value={stats.pending} />
         </div>
 
         <div className="rounded-3xl border border-border bg-white p-4 md:p-6 shadow-card">
@@ -334,72 +218,50 @@ export default function ReportsPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <input
               type="text"
               name="search"
               value={filters.search}
               onChange={handleChange}
-              placeholder="بحث باسم الدورة أو الكود"
+              placeholder="بحث باسم الدورة"
               className={inputClass}
             />
 
             <select
-              name="projectId"
-              value={filters.projectId}
-              onChange={handleChange}
-              className={inputClass}
-            >
-              <option value="">كل المشاريع</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-
-            <select
-              name="status"
-              value={filters.status}
-              onChange={handleChange}
-              className={inputClass}
-            >
-              <option value="">كل الحالات</option>
-              <option value="PREPARATION">قيد الإعداد</option>
-              <option value="EXECUTION">قيد التنفيذ</option>
-              <option value="AWAITING_CLOSURE">بانتظار الإغلاق</option>
-              <option value="CLOSED">مغلقة</option>
-              <option value="ARCHIVED">مؤرشفة</option>
-            </select>
-
-            <input
-              type="text"
-              name="city"
-              value={filters.city}
-              onChange={handleChange}
-              placeholder="المدينة"
-              className={inputClass}
-            />
-
-            <select
-              name="courseType"
-              value={filters.courseType}
-              onChange={handleChange}
-              className={inputClass}
-            >
-              <option value="">كل أنواع الدورات</option>
-              <option value="internal">داخلية</option>
-              <option value="external">خارجية</option>
-            </select>
-
-            <input
-              type="text"
               name="locationType"
               value={filters.locationType}
               onChange={handleChange}
-              placeholder="مقر التنفيذ"
               className={inputClass}
-            />
+            >
+              <option value="">كل مقرات التنفيذ</option>
+              <option value="INTERNAL">داخلي</option>
+              <option value="EXTERNAL">خارجي</option>
+              <option value="REMOTE">عن بُعد</option>
+            </select>
+
+            {activeRole === 'MANAGER' ? (
+              <select
+                name="presenter"
+                value={filters.presenter}
+                onChange={handleChange}
+                className={inputClass}
+              >
+                <option value="">كل مقدمي التقارير</option>
+                {presenterOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value="تقاريري فقط"
+                className={`${inputClass} bg-background`}
+                disabled
+              />
+            )}
 
             <input
               type="date"
@@ -416,67 +278,12 @@ export default function ReportsPage() {
               onChange={handleChange}
               className={inputClass}
             />
-
-            <select
-              name="requiresAdvance"
-              value={filters.requiresAdvance}
-              onChange={handleChange}
-              className={inputClass}
-            >
-              <option value="">السلفة المالية: الكل</option>
-              <option value="true">نعم</option>
-              <option value="false">لا</option>
-            </select>
-
-            <select
-              name="requiresRevenue"
-              value={filters.requiresRevenue}
-              onChange={handleChange}
-              className={inputClass}
-            >
-              <option value="">الإيرادات: الكل</option>
-              <option value="true">نعم</option>
-              <option value="false">لا</option>
-            </select>
-
-            <select
-              name="requiresAdvanceSettlement"
-              value={filters.requiresAdvanceSettlement}
-              onChange={handleChange}
-              className={inputClass}
-            >
-              <option value="">تسوية السلفة: الكل</option>
-              <option value="true">نعم</option>
-              <option value="false">لا</option>
-            </select>
-
-            <select
-              name="requiresSupervisorCompensation"
-              value={filters.requiresSupervisorCompensation}
-              onChange={handleChange}
-              className={inputClass}
-            >
-              <option value="">مستحقات المشرف: الكل</option>
-              <option value="true">نعم</option>
-              <option value="false">لا</option>
-            </select>
-
-            <select
-              name="requiresTrainerCompensation"
-              value={filters.requiresTrainerCompensation}
-              onChange={handleChange}
-              className={inputClass}
-            >
-              <option value="">مستحقات المدرب: الكل</option>
-              <option value="true">نعم</option>
-              <option value="false">لا</option>
-            </select>
           </div>
         </div>
 
         <div className="rounded-3xl border border-border bg-white shadow-card overflow-hidden">
           <div className="p-4 border-b border-border">
-            <h2 className="text-lg font-extrabold text-primary">نتائج التقرير</h2>
+            <h2 className="text-lg font-extrabold text-primary">سجل التقارير الميدانية</h2>
           </div>
 
           {loading ? (
@@ -486,40 +293,44 @@ export default function ReportsPage() {
               <table className="min-w-full text-sm">
                 <thead className="bg-background">
                   <tr className="text-right text-text-soft">
+                    <th className="px-4 py-3 font-bold">م</th>
                     <th className="px-4 py-3 font-bold">اسم الدورة</th>
-                    <th className="px-4 py-3 font-bold">الكود</th>
-                    <th className="px-4 py-3 font-bold">المشروع</th>
-                    <th className="px-4 py-3 font-bold">المدينة</th>
+                    <th className="px-4 py-3 font-bold">تاريخ البداية</th>
+                    <th className="px-4 py-3 font-bold">تاريخ النهاية</th>
                     <th className="px-4 py-3 font-bold">مقر التنفيذ</th>
-                    <th className="px-4 py-3 font-bold">النوع</th>
-                    <th className="px-4 py-3 font-bold">الحالة</th>
-                    <th className="px-4 py-3 font-bold">البداية</th>
-                    <th className="px-4 py-3 font-bold">النهاية</th>
-                    <th className="px-4 py-3 font-bold">المتدربون</th>
+                    <th className="px-4 py-3 font-bold">اسم مقدم التقرير</th>
+                    <th className="px-4 py-3 font-bold">طباعة التقرير</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCourses.length === 0 ? (
+                  {filteredRows.length === 0 ? (
                     <tr>
-                      <td colSpan="10" className="px-4 py-8 text-center text-text-soft">
-                        لا توجد نتائج
+                      <td colSpan="7" className="px-4 py-8 text-center text-text-soft">
+                        لا توجد تقارير
                       </td>
                     </tr>
                   ) : (
-                    filteredCourses.map((course) => (
-                      <tr key={course.id} className="border-t border-border hover:bg-background transition">
-                        <td className="px-4 py-3 font-bold text-text-main">{course.name || '-'}</td>
-                        <td className="px-4 py-3 text-text-soft">{course.code || '-'}</td>
-                        <td className="px-4 py-3 text-text-soft">{getProjectName(course)}</td>
-                        <td className="px-4 py-3 text-text-soft">{course.city || '-'}</td>
-                        <td className="px-4 py-3 text-text-soft">{course.locationType || '-'}</td>
+                    filteredRows.map((row, index) => (
+                      <tr
+                        key={row.id}
+                        className="border-t border-border hover:bg-background transition"
+                      >
+                        <td className="px-4 py-3 text-text-soft">{index + 1}</td>
+                        <td className="px-4 py-3 font-bold text-text-main">{row.courseName}</td>
+                        <td className="px-4 py-3 text-text-soft">{formatDate(row.startDate)}</td>
+                        <td className="px-4 py-3 text-text-soft">{formatDate(row.endDate)}</td>
                         <td className="px-4 py-3 text-text-soft">
-                          {course.courseType === 'internal' ? 'داخلية' : 'خارجية'}
+                          {formatLocationType(row.locationType)}
                         </td>
-                        <td className="px-4 py-3 text-text-soft">{getStatusLabel(course.status)}</td>
-                        <td className="px-4 py-3 text-text-soft">{formatDate(course.startDate)}</td>
-                        <td className="px-4 py-3 text-text-soft">{formatDate(course.endDate)}</td>
-                        <td className="px-4 py-3 text-text-soft">{course.numTrainees || 0}</td>
+                        <td className="px-4 py-3 text-text-soft">{row.presenterName}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => handlePrint(row.id)}
+                            className="rounded-2xl bg-primary px-4 py-2 text-xs font-bold text-white transition hover:bg-primary-dark"
+                          >
+                            طباعة التقرير
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
